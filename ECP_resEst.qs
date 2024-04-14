@@ -36,9 +36,12 @@ namespace ECP_resEst {
             }
         }
 
+        // i-th window operation
         for i in 0..num_window-1 {
-            // TODO: change control qubits
-            WindowStep(contrl_qubits, input_x, input_y);
+            let start = i * (num_bits / num_window);
+            let end = (i + 1) * (num_bits / num_window) - 1;
+            let control_interval = contrl_qubits[start .. end];
+            WindowStep(control_interval, input_x, input_y);
         }
 
         // inverse QFT on control qubits
@@ -133,6 +136,47 @@ namespace ECP_resEst {
                        z_3: Qubit[], z_4: Qubit[], lambda: Qubit[], lambda_r: Qubit[]) : Unit {
         // step 6
 
+    }
+
+
+    // the following section is for the six modular arithmetic operations
+    operation ModAdd(x: Qubit[], y: Qubit[]): Unit {
+        // x, y are the two numbers to be added
+        // the result is stored in y
+        // |y> -> |y + x mod p>
+    }
+
+    operation ModSub(x: Qubit[], y: Qubit[]): Unit {
+        // x, y are the two numbers to be subtracted
+        // the result is stored in y
+        // |y> -> |y - x mod p>
+    }
+
+    operation ModNeg(x: Qubit[]): Unit {
+        // x is the number to be negated
+        // the result is stored in x
+        // |x> -> |-x mod p>
+    }
+
+    operation ModDbl(x: Qubit[]): Unit {
+        // x is the number to be squared
+        // the result is stored in x
+        // |x> -> |2x mod p>
+    }
+
+    operation ModMult(x: Qubit[], y: Qubit[], garb: Qubit[], modMultResult: Qubit[]): Unit {
+        // x, y are the two numbers to be multiplied
+        // the result is stored in modMultResult
+        // modMultResult = |0> -> |xy mod p>
+
+
+        // there will a ModMultStep operation that is called multiple times
+    }
+
+    operation ModInv(x: Qubit[], garb_1: Qubit[], garb_2: Qubit[]): Unit {
+        // x is the number to be inverted
+        // the result is stored in x
+        // |x> -> |x^-1 mod p>
     }
 }
 
