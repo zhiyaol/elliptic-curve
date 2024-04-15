@@ -84,10 +84,10 @@ for (i in 0 .. numQubits - 1) {
         Reset(controls[i]);
 
 // Step 5: Apply controlled version of ModSub on registers a and x with the first and second entries of the 'f' array as controls
-    ControlledModSub([f[0], f[1]], a, x, f);
+    ControlledModSub([f[0], f[1]], a, x);
 
 // Step 6: Apply controlled version of ModAdd on registers b and y with the first and second entries of the 'f' array as controls
-    ControlledModSub([f[0], f[1]], b, y, f);
+    ControlledModSub([f[0], f[1]], b, y);
 
 // Step 7 Prepare x-y control qubits for 2NControlledToffoli operation
     mutable controls = new Qubit[numQubits * 2];
@@ -103,8 +103,40 @@ for (i in 0 .. numQubits - 1) {
     NControlledToffoli(controls, f[1]);
 
     // Release the control qubits
-    for (i in 0 .. Length(controls) - 1) {
+    for i in 0 .. Length(controls) - 1 {
         Reset(controls[i]);
+
+operation StepFour(f: Qubit[], control: Qubit, a: Qubit[], b: Qubit[],
+                   x: Qubit[], y: Qubit[], z_1: Qubit[], z_2: Qubit[], 
+                   z_3: Qubit[], z_4: Qubit[], lambda: Qubit[], lambda_r: Qubit[]) : Unit {
+
+    // Step 1: Apply a sequence of n CNOT gates with lambda register as control and z_4 register as target
+    let numQubits = Length(lambda);
+    for (i in 0 .. numQubits - 1) {
+        CNOT(lambda[i], z_4[i]);
+    }
+
+   // Step 2: Apply the ModMult operation with lambda, z_4, z_2, and z_3 registers
+   ModMult(lambda, z_4, z_2, z_3);
+  
+  // Step 3: Apply the ModSub operation with z_3 and x registers
+  ModSub(z_3, x);
+ 
+ // Step 4: Uncompute the effect of the ModMult operation
+ Adjoint ModMult(lambda, z_4, z_2, z_3);
+
+//Step 5: Apply the ModMult operation with lambda, x, z_4 and z_3 registers
+ModMult(lambda, x, z_4, z_3);
+
+//Step 6: Apply a sequence of n CNOT gates with y register as control and z_3 register as target
+    for i in 0 .. numQubits - 1{
+        CNOT(y[i], z_4[i]);
+
+// Step 7: Uncompute the effect of the ModMult operation
+AdjointModMult(lambda, x, z_4, z_3);
+
+}
+
 
 
 
