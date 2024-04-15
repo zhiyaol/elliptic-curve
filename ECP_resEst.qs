@@ -5,6 +5,8 @@ namespace ECP_resEst {
     open Microsoft.Quantum.Arrays;
     open Microsoft.Quantum.Unstable.Arithmetic;
     open Microsoft.Quantum.Unstable.TableLookup;
+    open Microsoft.Quantum.Diagnostics;
+
 
     @EntryPoint()
     operation main() : Unit {
@@ -58,7 +60,7 @@ namespace ECP_resEst {
 
     operation WindowStep(control: Qubit[], x: Qubit[], y: Qubit[]) : Unit {
         let n= Length(x);
-        // Fact(Length(x) == Length(y), "x and y must be of same size");
+        Fact(Length(x) == Length(y), "x and y must be of same size");
 
         use a = Qubit[n];
         use b = Qubit[n];
@@ -188,6 +190,9 @@ namespace ECP_resEst {
         // x, y are the two numbers to be multiplied
         // the result is stored in modMultResult
         // modMultResult = |0> -> |xy mod p>
+        let n = Length(x);
+        Fact(n == Length(y), "x and y must be of same size");
+
 
 
         // there will a ModMultStep operation that is called multiple times
@@ -198,6 +203,57 @@ namespace ECP_resEst {
         // x is the number to be inverted
         // the result is stored in x
         // |x> -> |x^-1 mod p>
+    }
+
+    operation nQubitToff(ctl: Qubit[], target: Qubit, color: Bool): Unit {
+        // n-qubit Toffoli gate
+        // color is the color of the Toffoli gate
+        // color = true: black Toffoli gate
+        // color = false: white Toffoli gate
+        let n = Length(ctl);
+
+        if color {
+            Controlled X(ctl, (target));
+        } else {
+            for i in 0..n-1 {
+                X(ctl[i]);
+            }
+            Controlled X(ctl, (target));
+            for i in 0..n-1 {
+                X(ctl[i]);
+            }
+        }
+    }
+
+    operation nQubitEqual(x: Qubit[], y: Qubit[], target: Qubit): Unit {
+        // check if two n-qubit numbers are equal
+        // Then apply a CNOT gate to target qubit
+        let n = Length(x);
+        Fact(n == Length(y), "x and y must be of same size");
+
+        use ancilla = Qubit[n];
+
+        for i in 0..n-1 {
+            CNOT(x[i], ancilla[i]);
+            CNOT(y[i], ancilla[i]);
+        }
+        // By now, ancilla[i] is 0 if x[i] == y[i], and 1 otherwise.
+
+        // if ancilla[i] is 0 for all i, then x == y, apply X gate to target
+        nQubitToff(ancilla, target, false);
+
+        // Uncompute the ancilla qubits
+        for i in 0..n-1 {
+            CNOT(y[i], ancilla[i]);
+            CNOT(x[i], ancilla[i]);
+        }
+
+        // reset ancilla qubits and release them without any entanglement.
+        for i in 0..n - 1 {
+            if (MResetZ(ancilla[i]) == One) {
+                fail "Ancilla qubit was not in the |0> state upon reset.";
+            }
+        }
     }
 }
 
