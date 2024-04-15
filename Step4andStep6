@@ -83,5 +83,28 @@ for (i in 0 .. numQubits - 1) {
     for (i in 0 .. Length(controls) - 1) {
         Reset(controls[i]);
 
+// Step 5: Apply controlled version of ModSub on registers a and x with the first and second entries of the 'f' array as controls
+    ControlledModSub([f[0], f[1]], a, x, f);
+
+// Step 6: Apply controlled version of ModAdd on registers b and y with the first and second entries of the 'f' array as controls
+    ControlledModSub([f[0], f[1]], b, y, f);
+
+// Step 7 Prepare x-y control qubits for 2NControlledToffoli operation
+    mutable controls = new Qubit[numQubits * 2];
+    for i in 0 .. numQubits - 1 {
+        set controls[i] = x[i];
+        set controls[numQubits + i] = y[i];
+    }
+
+    // Apply NControlledToffoli gate with 'controls' as controls and the first qubit in 'f' as target
+    NControlledToffoli(controls, f[0]);
+
+    // Apply NControlledToffoli gate with 'controls' as controls and the second qubit in 'f' as target
+    NControlledToffoli(controls, f[1]);
+
+    // Release the control qubits
+    for (i in 0 .. Length(controls) - 1) {
+        Reset(controls[i]);
+
 
 
