@@ -85,7 +85,7 @@ namespace ECP_resEst {
         use lambda = Qubit[n];
 
         use f = Qubit[4];
-        use control = Qubit();
+        use control = Qubit[1]; //  Zhiyao edited how control is allocated here and in steps functions. Will explain.
         
         step_one(f, control, a, b, x, y, z_1, z_2, z_3, z_4, lambda, lambda_r);
         step_two(f, control, a, b, x, y, z_1, z_2, z_3, z_4, lambda, lambda_r);
@@ -96,42 +96,55 @@ namespace ECP_resEst {
     }
 
 
-    operation step_one(f: Qubit[], control: Qubit, a: Qubit[], b: Qubit[],
+    operation step_one(f: Qubit[], control: Qubit[], a: Qubit[], b: Qubit[],
                        x: Qubit[], y: Qubit[], z_1: Qubit[], z_2: Qubit[], 
                        z_3: Qubit[], z_4: Qubit[], lambda: Qubit[], lambda_r: Qubit[]) : Unit {
         // step 1
 
     }
 
-    operation step_two(f: Qubit[], control: Qubit, a: Qubit[], b: Qubit[],
+    operation step_two(f: Qubit[], control: Qubit[], a: Qubit[], b: Qubit[],
                        x: Qubit[], y: Qubit[], z_1: Qubit[], z_2: Qubit[], 
                        z_3: Qubit[], z_4: Qubit[], lambda: Qubit[], lambda_r: Qubit[]) : Unit {
         // step 2
+        ModSub(a,x);
+        Controlled ModSub(control, (b, y)); // Not sure how to do controlled operation
+
+        within {
+            ModInv(x,z_1,z_2);
+            ModMult(x,y,z_3,z_4);
+        } apply {
+            
+        }
 
     }
 
-    operation step_three(f: Qubit[], control: Qubit, a: Qubit[], b: Qubit[],
+    operation step_three(f: Qubit[], control: Qubit[], a: Qubit[], b: Qubit[],
                        x: Qubit[], y: Qubit[], z_1: Qubit[], z_2: Qubit[], 
                        z_3: Qubit[], z_4: Qubit[], lambda: Qubit[], lambda_r: Qubit[]) : Unit {
         // step 3
 
     }
 
-    operation step_four(f: Qubit[], control: Qubit, a: Qubit[], b: Qubit[],
+    operation step_four(f: Qubit[], control: Qubit[], a: Qubit[], b: Qubit[],
                        x: Qubit[], y: Qubit[], z_1: Qubit[], z_2: Qubit[], 
                        z_3: Qubit[], z_4: Qubit[], lambda: Qubit[], lambda_r: Qubit[]) : Unit {
         // step 4
 
     }
+    
 
-    operation step_five(f: Qubit[], control: Qubit, a: Qubit[], b: Qubit[],
+    operation step_five(f: Qubit[], control: Qubit[], a: Qubit[], b: Qubit[],
                        x: Qubit[], y: Qubit[], z_1: Qubit[], z_2: Qubit[], 
                        z_3: Qubit[], z_4: Qubit[], lambda: Qubit[], lambda_r: Qubit[]) : Unit {
         // step 5
+        // Adjoint ;
+        Controlled ModNeg(control,x);
+        ModAdd(a,x); 
+    
+                       }
 
-    }
-
-    operation step_six(f: Qubit[], control: Qubit, a: Qubit[], b: Qubit[],
+    operation step_six(f: Qubit[], control: Qubit[], a: Qubit[], b: Qubit[],
                        x: Qubit[], y: Qubit[], z_1: Qubit[], z_2: Qubit[], 
                        z_3: Qubit[], z_4: Qubit[], lambda: Qubit[], lambda_r: Qubit[]) : Unit {
         // step 6
@@ -140,31 +153,38 @@ namespace ECP_resEst {
 
 
     // the following section is for the six modular arithmetic operations
-    operation ModAdd(x: Qubit[], y: Qubit[]): Unit {
+    operation ModAdd(x: Qubit[], y: Qubit[]): Unit 
+    is Adj + Ctl { // Zhiyao added this line so the function can be controlled and adjointedGIT 
         // x, y are the two numbers to be added
         // the result is stored in y
         // |y> -> |y + x mod p>
     }
 
-    operation ModSub(x: Qubit[], y: Qubit[]): Unit {
+    operation ModSub(x: Qubit[], y: Qubit[]): Unit 
+    is Adj + Ctl {
         // x, y are the two numbers to be subtracted
         // the result is stored in y
         // |y> -> |y - x mod p>
+        ModAdd(x,y);
+        
     }
 
-    operation ModNeg(x: Qubit[]): Unit {
+    operation ModNeg(x: Qubit[]): Unit 
+    is Adj + Ctl {
         // x is the number to be negated
         // the result is stored in x
         // |x> -> |-x mod p>
     }
 
-    operation ModDbl(x: Qubit[]): Unit {
+    operation ModDbl(x: Qubit[]): Unit 
+    is Adj + Ctl {
         // x is the number to be squared
         // the result is stored in x
         // |x> -> |2x mod p>
     }
 
-    operation ModMult(x: Qubit[], y: Qubit[], garb: Qubit[], modMultResult: Qubit[]): Unit {
+    operation ModMult(x: Qubit[], y: Qubit[], garb: Qubit[], modMultResult: Qubit[]): Unit 
+    is Adj + Ctl{
         // x, y are the two numbers to be multiplied
         // the result is stored in modMultResult
         // modMultResult = |0> -> |xy mod p>
@@ -173,7 +193,8 @@ namespace ECP_resEst {
         // there will a ModMultStep operation that is called multiple times
     }
 
-    operation ModInv(x: Qubit[], garb_1: Qubit[], garb_2: Qubit[]): Unit {
+    operation ModInv(x: Qubit[], garb_1: Qubit[], garb_2: Qubit[]): Unit 
+    is Adj + Ctl {
         // x is the number to be inverted
         // the result is stored in x
         // |x> -> |x^-1 mod p>
