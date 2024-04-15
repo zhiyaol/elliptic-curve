@@ -1,0 +1,87 @@
+operation NControlledToffoli(controlQubits : Qubit[], target : Qubit) : Unit {
+    // Define the number of control qubits
+    let numControls = Length(controlQubits);
+    
+    // Base case: if there are no control qubits, do nothing
+    if (numControls == 0) {
+        // Do nothing, just end the operation
+        ()
+    }
+    // Base case: if there is only one control qubit, apply a CNOT gate
+    elif (numControls == 1) {
+        Controlled X([controlQubits[0]], target);
+    }
+    // For more than one control qubit, recursively apply Toffoli gate
+    else {
+        // Allocate an ancilla qubit
+        use ancilla = Qubit(); {
+            // Apply Toffoli gate with all but the last control qubit
+            NControlledToffoli(controlQubits[0..(numControls-2)], ancilla);
+            
+            // Apply Toffoli gate with the last control qubit and the ancilla as controls, and the target as target
+            Controlled X([controlQubits[numControls-1], ancilla], target);
+            
+            // Uncompute the ancilla qubit
+            NControlledToffoli(controlQubits[0..(numControls-2)], ancilla);
+        }
+    }
+}
+
+operation step_six(f: Qubit[], control: Qubit, a: Qubit[], b: Qubit[],
+                   x: Qubit[], y: Qubit[], z_1: Qubit[], z_2: Qubit[], 
+                   z_3: Qubit[], z_4: Qubit[], lambda: Qubit[], lambda_r: Qubit[]) : Unit {
+
+ // Step1 Apply the N-controlled Toffoli gate with the second, third, and fourth qubits of the f register as controls
+ NControlledToffoli([f[1], f[2], f[3]], control);
+
+//Define the number of qubits in the registers 'x' or 'y'
+    let numQubits = Length(x);
+
+// Step 2a Apply a sequence of f-a-x CCNOT gates
+  for (i in 0 .. numQubits - 1) {
+        // The first control qubit is the fourth entry in the 'f' array
+        let firstControl = f[3];
+        // The second control qubit is the i-th entry in the 'a' array
+        let secondControl = a[i];
+        // The target qubit is the i-th entry in the 'x' array
+        let target = x[i];
+        // Apply the CCNOT gate with the specified control and target qubits
+        Controlled X([firstControl, secondControl], target);
+    }
+//Step 2b Apply a sequence of f-b-y CCNOT gates
+for (i in 0 .. numQubits - 1) {
+        // The first control qubit is the fourth entry in the 'f' array
+        let firstControl1 = f[3];
+        // The second control qubit is the i-th entry in the 'b' array
+        let secondControl1 = b[i];
+        // The target qubit is the i-th entry in the 'x' array
+        let target1 = y[i];
+        // Apply the CCNOT gate with the specified control and target qubits
+        Controlled X([firstControl1, secondControl1], target1);
+}
+
+// Step 3 Perform equality check between 'a' and 'x' registers
+    let equalAx = EqualA(a, x);
+
+    // Perform equality check between 'b' and 'y' registers
+    let equalBy = EqualA(b, y);
+
+    // If both equality checks pass, reset the fourth entry in the 'f' register
+    if equalAx and equalBy {X(f[3])}
+
+// Step 4 Prepare a-b control qubits for 2NControlledToffoli operation
+    mutable controls = new Qubit[numQubits * 2];
+    for i in 0 .. numQubits - 1 {
+        set controls[i] = a[i];
+        set controls[numQubits + i] = b[i];
+    }
+
+    // Apply NControlledToffoli gate with 'controls' as controls and the third qubit in 'f' as target
+    NControlledToffoli(controls, f[2]);
+
+    // Release the control qubits
+    for (i in 0 .. Length(controls) - 1) {
+        Reset(controls[i]);
+
+
+
