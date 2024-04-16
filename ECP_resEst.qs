@@ -159,7 +159,25 @@ namespace ECP_resEst {
                        x: Qubit[], y: Qubit[], z_1: Qubit[], z_2: Qubit[], 
                        z_3: Qubit[], z_4: Qubit[], lambda: Qubit[], lambda_r: Qubit[]) : Unit {
         // step 4
+        let n = Length(x);
+        within {
+            for i in 0..n-1 {
+                CNOT(lambda[i], z_4[i]);
+            }
+            ModMult(lambda, z_4, z_2, z_3);
+        }
+        apply {
+            ModSub(z_3, x);
+        }
 
+        within {
+            ModMult(x, lambda, z_4, z_3);
+        }
+        apply {
+            for i in 0..n-1 {
+                CNOT(z_3[i], y[i]);
+            }
+        }
     }
     
 
@@ -177,6 +195,7 @@ namespace ECP_resEst {
                        x: Qubit[], y: Qubit[], z_1: Qubit[], z_2: Qubit[], 
                        z_3: Qubit[], z_4: Qubit[], lambda: Qubit[], lambda_r: Qubit[]) : Unit {
         // step 6
+
 
     }
 
@@ -260,40 +279,17 @@ namespace ECP_resEst {
 
         use ancilla = Qubit[n];
 
-        // maybe this way would be better?
-        // within {
-        //     for i in 0..n-1 {
-        //         CNOT(x[i], ancilla[i]);
-        //         CNOT(y[i], ancilla[i]);
-        //     }
-        // } apply {
-        //     nQubitToff(ancilla, target, false);
-        // }
-
-
-        // Current Implementation:
-        for i in 0..n-1 {
-            CNOT(x[i], ancilla[i]);
-            CNOT(y[i], ancilla[i]);
-        }
-        // By now, ancilla[i] is 0 if x[i] == y[i], and 1 otherwise.
-
-        // if ancilla[i] is 0 for all i, then x == y, apply X gate to target
-        nQubitToff(ancilla, target, false);
-
-        // Uncompute the ancilla qubits
-        for i in 0..n-1 {
-            CNOT(y[i], ancilla[i]);
-            CNOT(x[i], ancilla[i]);
-        }
-
-
-        // reset ancilla qubits and release them without any entanglement.
-        for i in 0..n - 1 {
-            if (MResetZ(ancilla[i]) == One) {
-                fail "Ancilla qubit was not in the |0> state upon reset.";
+        within {
+            for i in 0..n-1 {
+                CNOT(x[i], ancilla[i]);
+                CNOT(y[i], ancilla[i]);
             }
+        } apply {
+            nQubitToff(ancilla, target, false);
         }
     }
 }
+
+
+
 
