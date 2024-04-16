@@ -102,7 +102,16 @@ namespace ECP_resEst {
                        x: Qubit[], y: Qubit[], z_1: Qubit[], z_2: Qubit[], 
                        z_3: Qubit[], z_4: Qubit[], lambda: Qubit[], lambda_r: Qubit[]) : Unit {
         // step 1
+        nQubitEqual(a, x, f[0]);
 
+        ModNeg(y);
+
+        nQubitEqual(b, y, f[1]);
+        ModNeg(y);
+
+        nQubitToff(a + b, f[2], false);
+        nQubitToff(x + y, f[3], false);
+        nQubitToff(f[1..3], control[0], false);
     }
 
     operation step_two(f: Qubit[], control: Qubit[], a: Qubit[], b: Qubit[],
@@ -125,7 +134,25 @@ namespace ECP_resEst {
                        x: Qubit[], y: Qubit[], z_1: Qubit[], z_2: Qubit[], 
                        z_3: Qubit[], z_4: Qubit[], lambda: Qubit[], lambda_r: Qubit[]) : Unit {
         // step 3
+        let n = Length(x);
+        
+        within {
+            ModMult(x, lambda, z_2, z_1)
+        }
+        apply {
+            Controlled ModSub(control, (z_1, y))
+        }
 
+        within {
+            for i in 0..n-1 {
+                CNOT(a[i], z_1[i]);
+            }
+            ModDbl(z_1);
+            ModAdd(a, z_1);
+        }
+        apply {
+            Controlled ModAdd(control, (z_1, x));
+        }
     }
 
     operation step_four(f: Qubit[], control: Qubit[], a: Qubit[], b: Qubit[],
@@ -233,6 +260,18 @@ namespace ECP_resEst {
 
         use ancilla = Qubit[n];
 
+        // maybe this way would be better?
+        // within {
+        //     for i in 0..n-1 {
+        //         CNOT(x[i], ancilla[i]);
+        //         CNOT(y[i], ancilla[i]);
+        //     }
+        // } apply {
+        //     nQubitToff(ancilla, target, false);
+        // }
+
+
+        // Current Implementation:
         for i in 0..n-1 {
             CNOT(x[i], ancilla[i]);
             CNOT(y[i], ancilla[i]);
@@ -247,6 +286,7 @@ namespace ECP_resEst {
             CNOT(y[i], ancilla[i]);
             CNOT(x[i], ancilla[i]);
         }
+
 
         // reset ancilla qubits and release them without any entanglement.
         for i in 0..n - 1 {
