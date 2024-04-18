@@ -85,7 +85,7 @@ namespace ECP_resEst {
         use lambda = Qubit[n];
 
         use f = Qubit[4];
-        use control = Qubit[1]; //  Zhiyao edited how control is allocated here and in steps functions. Will explain.
+        use control = Qubit[1];
         
         step_one(f, control, a, b, x, y, z_1, z_2, z_3, z_4, lambda, lambda_r);
         step_two(f, control, a, b, x, y, z_1, z_2, z_3, z_4, lambda, lambda_r);
@@ -108,13 +108,27 @@ namespace ECP_resEst {
                        z_3: Qubit[], z_4: Qubit[], lambda: Qubit[], lambda_r: Qubit[]) : Unit {
         // step 2
         ModSub(a,x);
-        Controlled ModSub(control, (b, y)); // Not sure how to do controlled operation
+        Controlled ModSub(control, (b, y)); 
 
         within {
             ModInv(x,z_1,z_2);
             ModMult(x,y,z_3,z_4);
         } apply {
+            use ancilla = Qubit();
+            X(f[0]);
+            Controlled X([f[0]]+control, ancilla); // Unsure how I concatenate qubit lists and qubits into one list.
+            for i in 1..Length(z_4)-1 {
+                nQubitToff(control+[z_4[i]],lambda[i],True); // Unsure how I concatenate qubit lists and qubits into one list
+                }
+
+            X(f[0]);
+            CNOT(control[0],ancilla); // Check implementation with mentors here
             
+            for i in 1..Length(lambda)-1 {
+                nQubitToff(control+[lambda_r[i]],lambda[i],True); // Unsure how I concatenate qubit lists and qubits into one list
+                }
+
+            nQubitEqual(lambda,lambda_r,f[0])
         }
 
     }
@@ -137,12 +151,28 @@ namespace ECP_resEst {
     operation step_five(f: Qubit[], control: Qubit[], a: Qubit[], b: Qubit[],
                        x: Qubit[], y: Qubit[], z_1: Qubit[], z_2: Qubit[], 
                        z_3: Qubit[], z_4: Qubit[], lambda: Qubit[], lambda_r: Qubit[]) : Unit {
-        // step 5
-        // Adjoint ;
+
+        Adjoint step_five_helper(control,x,y,z_1,z_2,z_3,z_4,lambda);
+        
         Controlled ModNeg(control,x);
         ModAdd(a,x); 
-    
-                       }
+        Controlled ModSub(control,(b,y));
+    }
+
+    operation step_five_helper(control: Qubit[], x: Qubit[], y: Qubit[], z_1: Qubit[], z_2: Qubit[], 
+                                z_3: Qubit[], z_4: Qubit[], lambda: Qubit[]) : Unit
+    is Adj + Ctl {
+    // Helper Function that fits in the uncompute box in step 5
+        within {
+            ModInv(x,z_1,z_2);
+            ModMult(x,y,z_3,z_4);
+        } apply {
+            for i in 1..Length(z_4)-1 {
+                nQubitToff(control+[z_4[i]],lambda[i],True);
+                // Unsure how I concatenate qubit lists and qubits into one list
+                }
+        }
+    }
 
     operation step_six(f: Qubit[], control: Qubit[], a: Qubit[], b: Qubit[],
                        x: Qubit[], y: Qubit[], z_1: Qubit[], z_2: Qubit[], 
@@ -154,7 +184,7 @@ namespace ECP_resEst {
 
     // the following section is for the six modular arithmetic operations
     operation ModAdd(x: Qubit[], y: Qubit[]): Unit 
-    is Adj + Ctl { // Zhiyao added this line so the function can be controlled and adjointedGIT 
+    is Adj + Ctl { // Zhiyao added this line so the function can be controlled and adjointed
         // x, y are the two numbers to be added
         // the result is stored in y
         // |y> -> |y + x mod p>
