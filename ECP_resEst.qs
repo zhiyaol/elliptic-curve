@@ -66,14 +66,33 @@ namespace ECP_resEst {
 
 
         // TODO: don't trust the following part here.
+        // TODO: Look up table
         let data: Bool[][] = []; // TODO: compute
+        let precision = Length(x);
 
-        within {
+        for c in 0..2^Length(control)-1 { //[c]R = R+R+...+R (add it c times)
+            let result_a: Int = c^3; // Placeholder
+            let result_b: Int = c + 1; // Placeholder
+
+            let result_lambda_r: Int = (3*result_a^2+c1)/(2*result_b); //c1 is the eliptic curve parameter
+
+            let bin_a = IntAsBoolArray(result_a, precision);
+            let bin_b = IntAsBoolArray(result_b, precision);
+
+            let bin_lambda_r = IntAsBoolArray(result_lambda_r, precision);
+
+            set data w/= c <- (bin_a + bin_b + bin_lambda_r);
+        }
+    
+        within { 
             Select(data, control, a + b + lambda_r);
+
         } apply {
             ECPointAdd(a, b, x, y, lambda_r);
         }
     }
+
+    operation Select(data : Bool[][], address : Qubit[], target : Qubit[]) : Unit is Adj + Ctl{}
 
     operation ECPointAdd(a: Qubit[], b: Qubit[], x: Qubit[], y: Qubit[], lambda_r: Qubit[]) : Unit {
         // input: a, b, x, y, lambda_r
