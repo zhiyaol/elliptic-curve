@@ -77,15 +77,15 @@ namespace ECP_resEst {
             if c == 0 {
                 let result_a: Int = 0; 
                 let result_b: Int = 0;
-                }
+            }
             elif c == 1 {
                 let result_a: Int = Rx; // Placeholder
                 let result_b: Int = Ry;
-                }
-            else{
+            }
+            else {
                 let result_a: Int = c^3; // Placeholder
                 let result_b: Int = c + 1; // Placeholder
-                }
+            }
 
             let result_lambda_r: Int = (3*result_a^2+c1)/(2*result_b); //c1 is the eliptic curve parameter
 
@@ -151,16 +151,16 @@ namespace ECP_resEst {
         } apply {
             use ancilla = Qubit();
             X(f[0]);
-            Controlled X([f[0]]+control, ancilla); // Unsure how I concatenate qubit lists and qubits into one list.
+            Controlled X([f[0]]+control, ancilla); 
             for i in 1..Length(z_4)-1 {
-                nQubitToff(control+[z_4[i]],lambda[i],True); // Unsure how I concatenate qubit lists and qubits into one list
+                nQubitToff(control+[z_4[i]],lambda[i],True); 
                 }
 
             X(f[0]);
             CNOT(control[0],ancilla); // Check implementation with mentors here
             
             for i in 1..Length(lambda)-1 {
-                nQubitToff(control+[lambda_r[i]],lambda[i],True); // Unsure how I concatenate qubit lists and qubits into one list
+                nQubitToff(control+[lambda_r[i]],lambda[i],True);
                 }
 
             nQubitEqual(lambda,lambda_r,f[0])
@@ -203,8 +203,7 @@ namespace ECP_resEst {
             ModMult(x,y,z_3,z_4);
         } apply {
             for i in 1..Length(z_4)-1 {
-                nQubitToff(control+[z_4[i]],lambda[i],True);
-                // Unsure how I concatenate qubit lists and qubits into one list
+                nQubitToff(control+[z_4[i]],lambda[i],true);
                 }
         }
     }
