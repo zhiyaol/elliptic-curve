@@ -66,15 +66,26 @@ namespace ECP_resEst {
         use b = Qubit[n];
         use lambda_r = Qubit[n];
 
-
         // TODO: don't trust the following part here.
         let data: Bool[][] = []; // TODO: compute
+
+        // for c in 0,...,2^windowSize - 1
+        // compute (a, b) = [c]R and lambda_r = (3a^2 + c_1)/(2b)
+        // (R is the basis point)
+        // then set data w/= c <- (binResult + binResult2) // which means data[c] = [a, b, lambda_r]
+
+        // then do the look up with address = |+>^16
+        // since the address is in superposition, the target qubit will also be in superposition
+        // target qubit = a + b + lambda_r
+        // Select(data, address, target)  // which means target qubit = data[address]
 
         within {
             Select(data, control, a + b + lambda_r);
         } apply {
             ECPointAdd(a, b, x, y, lambda_r);
         }
+
+        // for each window, we need to change the basis point R.
     }
 
     operation ECPointAdd(a: Qubit[], b: Qubit[], x: Qubit[], y: Qubit[], lambda_r: Qubit[]) : Unit {
@@ -185,11 +196,7 @@ namespace ECP_resEst {
                        x: Qubit[], y: Qubit[], z_1: Qubit[], z_2: Qubit[], 
                        z_3: Qubit[], z_4: Qubit[], lambda: Qubit[], lambda_r: Qubit[]) : Unit {
         // step 5
-        // Adjoint ;
-        Controlled ModNeg(control,x);
-        ModAdd(a,x); 
-    
-                       }
+    }
 
     operation step_six(f: Qubit[], control: Qubit[], a: Qubit[], b: Qubit[],
                        x: Qubit[], y: Qubit[], z_1: Qubit[], z_2: Qubit[], 
@@ -213,8 +220,6 @@ namespace ECP_resEst {
         // x, y are the two numbers to be subtracted
         // the result is stored in y
         // |y> -> |y - x mod p>
-        ModAdd(x,y);
-        
     }
 
     operation ModNeg(x: Qubit[]): Unit 
