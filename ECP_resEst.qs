@@ -129,16 +129,6 @@ namespace ECP_resEst {
                        x: Qubit[], y: Qubit[], z_1: Qubit[], z_2: Qubit[], 
                        z_3: Qubit[], z_4: Qubit[], lambda: Qubit[], lambda_r: Qubit[]) : Unit {
         // step 2
-        ModSub(a,x);
-        Controlled ModSub(control, (b, y)); // Not sure how to do controlled operation
-
-        within {
-            ModInv(x,z_1,z_2);
-            ModMult(x,y,z_3,z_4);
-        } apply {
-            
-        }
-
     }
 
     operation step_three(f: Qubit[], control: Qubit[], a: Qubit[], b: Qubit[],
