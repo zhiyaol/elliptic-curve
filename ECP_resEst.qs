@@ -5,6 +5,8 @@ namespace ECP_resEst {
     open Microsoft.Quantum.Arrays;
     open Microsoft.Quantum.Unstable.Arithmetic;
     open Microsoft.Quantum.Unstable.TableLookup;
+    open Microsoft.Quantum.Diagnostics;
+
 
     @EntryPoint()
     operation main() : Unit {
@@ -58,21 +60,32 @@ namespace ECP_resEst {
 
     operation WindowStep(control: Qubit[], x: Qubit[], y: Qubit[]) : Unit {
         let n= Length(x);
-        // Fact(Length(x) == Length(y), "x and y must be of same size");
+        Fact(Length(x) == Length(y), "x and y must be of same size");
 
         use a = Qubit[n];
         use b = Qubit[n];
         use lambda_r = Qubit[n];
 
-
         // TODO: don't trust the following part here.
         let data: Bool[][] = []; // TODO: compute
+
+        // for c in 0,...,2^windowSize - 1
+        // compute (a, b) = [c]R and lambda_r = (3a^2 + c_1)/(2b)
+        // (R is the basis point)
+        // then set data w/= c <- (binResult + binResult2) // which means data[c] = [a, b, lambda_r]
+
+        // then do the look up with address = |+>^16
+        // since the address is in superposition, the target qubit will also be in superposition
+        // target qubit = a + b + lambda_r
+        // Select(data, address, target)  // which means target qubit = data[address]
 
         within {
             Select(data, control, a + b + lambda_r);
         } apply {
             ECPointAdd(a, b, x, y, lambda_r);
         }
+
+        // for each window, we need to change the basis point R.
     }
 
     operation ECPointAdd(a: Qubit[], b: Qubit[], x: Qubit[], y: Qubit[], lambda_r: Qubit[]) : Unit {
@@ -100,7 +113,16 @@ namespace ECP_resEst {
                        x: Qubit[], y: Qubit[], z_1: Qubit[], z_2: Qubit[], 
                        z_3: Qubit[], z_4: Qubit[], lambda: Qubit[], lambda_r: Qubit[]) : Unit {
         // step 1
+        nQubitEqual(a, x, f[0]);
 
+        ModNeg(y);
+
+        nQubitEqual(b, y, f[1]);
+        ModNeg(y);
+
+        nQubitToff(a + b, f[2], false);
+        nQubitToff(x + y, f[3], false);
+        nQubitToff(f[1..3], control[0], false);
     }
 
     operation step_two(f: Qubit[], control: Qubit[], a: Qubit[], b: Qubit[],
@@ -130,28 +152,63 @@ namespace ECP_resEst {
 
             nQubitEqual(lambda,lambda_r,f[0])
         }
-
     }
 
     operation step_three(f: Qubit[], control: Qubit[], a: Qubit[], b: Qubit[],
                        x: Qubit[], y: Qubit[], z_1: Qubit[], z_2: Qubit[], 
                        z_3: Qubit[], z_4: Qubit[], lambda: Qubit[], lambda_r: Qubit[]) : Unit {
         // step 3
+        let n = Length(x);
+        
+        within {
+            ModMult(x, lambda, z_2, z_1)
+        }
+        apply {
+            Controlled ModSub(control, (z_1, y))
+        }
 
+        within {
+            for i in 0..n-1 {
+                CNOT(a[i], z_1[i]);
+            }
+            ModDbl(z_1);
+            ModAdd(a, z_1);
+        }
+        apply {
+            Controlled ModAdd(control, (z_1, x));
+        }
     }
 
     operation step_four(f: Qubit[], control: Qubit[], a: Qubit[], b: Qubit[],
                        x: Qubit[], y: Qubit[], z_1: Qubit[], z_2: Qubit[], 
                        z_3: Qubit[], z_4: Qubit[], lambda: Qubit[], lambda_r: Qubit[]) : Unit {
         // step 4
+        let n = Length(x);
+        within {
+            for i in 0..n-1 {
+                CNOT(lambda[i], z_4[i]);
+            }
+            ModMult(lambda, z_4, z_2, z_3);
+        }
+        apply {
+            ModSub(z_3, x);
+        }
 
+        within {
+            ModMult(x, lambda, z_4, z_3);
+        }
+        apply {
+            for i in 0..n-1 {
+                CNOT(z_3[i], y[i]);
+            }
+        }
     }
     
 
     operation step_five(f: Qubit[], control: Qubit[], a: Qubit[], b: Qubit[],
                        x: Qubit[], y: Qubit[], z_1: Qubit[], z_2: Qubit[], 
                        z_3: Qubit[], z_4: Qubit[], lambda: Qubit[], lambda_r: Qubit[]) : Unit {
-
+        // step 5
         Adjoint step_five_helper(control,x,y,z_1,z_2,z_3,z_4,lambda);
         
         Controlled ModNeg(control,x);
@@ -179,6 +236,7 @@ namespace ECP_resEst {
                        z_3: Qubit[], z_4: Qubit[], lambda: Qubit[], lambda_r: Qubit[]) : Unit {
         // step 6
 
+
     }
 
 
@@ -195,8 +253,6 @@ namespace ECP_resEst {
         // x, y are the two numbers to be subtracted
         // the result is stored in y
         // |y> -> |y - x mod p>
-        ModAdd(x,y);
-        
     }
 
     operation ModNeg(x: Qubit[]): Unit 
@@ -218,6 +274,9 @@ namespace ECP_resEst {
         // x, y are the two numbers to be multiplied
         // the result is stored in modMultResult
         // modMultResult = |0> -> |xy mod p>
+        let n = Length(x);
+        Fact(n == Length(y), "x and y must be of same size");
+
 
 
         // there will a ModMultStep operation that is called multiple times
@@ -229,5 +288,46 @@ namespace ECP_resEst {
         // the result is stored in x
         // |x> -> |x^-1 mod p>
     }
+
+    operation nQubitToff(ctl: Qubit[], target: Qubit, color: Bool): Unit {
+        // n-qubit Toffoli gate
+        // color is the color of the Toffoli gate
+        // color = true: black Toffoli gate
+        // color = false: white Toffoli gate
+        let n = Length(ctl);
+
+        if color {
+            Controlled X(ctl, (target));
+        } else {
+            for i in 0..n-1 {
+                X(ctl[i]);
+            }
+            Controlled X(ctl, (target));
+            for i in 0..n-1 {
+                X(ctl[i]);
+            }
+        }
+    }
+
+    operation nQubitEqual(x: Qubit[], y: Qubit[], target: Qubit): Unit {
+        // check if two n-qubit numbers are equal
+        // Then apply a CNOT gate to target qubit
+        let n = Length(x);
+        Fact(n == Length(y), "x and y must be of same size");
+
+        use ancilla = Qubit[n];
+
+        within {
+            for i in 0..n-1 {
+                CNOT(x[i], ancilla[i]);
+                CNOT(y[i], ancilla[i]);
+            }
+        } apply {
+            nQubitToff(ancilla, target, false);
+        }
+    }
 }
+
+
+
 
