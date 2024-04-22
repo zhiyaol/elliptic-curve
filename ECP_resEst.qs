@@ -41,7 +41,8 @@ namespace ECP_resEst {
             let start = i * (num_bits / num_window);
             let end = (i + 1) * (num_bits / num_window) - 1;
             let control_interval = contrl_qubits[start .. end];
-            WindowStep(control_interval, input_x, input_y);
+            let c_offset = start; // c + 2^start to account for the next batch of c. 
+            WindowStep(control_interval, input_x, input_y, c_offset);
         }
 
         // inverse QFT on control qubits
@@ -56,7 +57,7 @@ namespace ECP_resEst {
         // just repeat the above steps
     }
 
-    operation WindowStep(control: Qubit[], x: Qubit[], y: Qubit[]) : Unit {
+    operation WindowStep(control: Qubit[], x: Qubit[], y: Qubit[], c_offset:Int) : Unit {
         let n= Length(x);
         // Fact(Length(x) == Length(y), "x and y must be of same size");
 
@@ -64,15 +65,27 @@ namespace ECP_resEst {
         use b = Qubit[n];
         use lambda_r = Qubit[n];
 
-
-        // TODO: don't trust the following part here.
         // TODO: Look up table
-        let data: Bool[][] = []; // TODO: compute
+        let data: Bool[][] = [[], size = 2^Length(control)]; // Is this size set up correctly?
         let precision = Length(x);
 
-        for c in 0..2^Length(control)-1 { //[c]R = R+R+...+R (add it c times)
-            let result_a: Int = c^3; // Placeholder
-            let result_b: Int = c + 1; // Placeholder
+        for c0 in 0..2^Length(control)-1 { //[c]R = R+R+...+R (add it c times)
+        
+            let c = c0 + 2^c_offset; // account for the next batch of c. c_offset is passed in at the i-th window operation step.
+            // How to keep track of the (a,b) calculated in the previous batch?
+
+            if c == 0 {
+                let result_a: Int = 0; 
+                let result_b: Int = 0;
+                }
+            elif c == 1 {
+                let result_a: Int = Rx; // Placeholder
+                let result_b: Int = Ry;
+                }
+            else{
+                let result_a: Int = c^3; // Placeholder
+                let result_b: Int = c + 1; // Placeholder
+                }
 
             let result_lambda_r: Int = (3*result_a^2+c1)/(2*result_b); //c1 is the eliptic curve parameter
 
@@ -81,10 +94,13 @@ namespace ECP_resEst {
 
             let bin_lambda_r = IntAsBoolArray(result_lambda_r, precision);
 
-            set data w/= c <- (bin_a + bin_b + bin_lambda_r);
+            set data w/= c <- (bin_a + bin_b + bin_lambda_r); 
+            // Set up as look up lambda_r from c. 
+            // Could also change to lambda_r from a,b but would probably require two lookup tables instead of 1
         }
     
         within { 
+            // control are the c input qubits
             Select(data, control, a + b + lambda_r);
 
         } apply {
