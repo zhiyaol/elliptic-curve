@@ -9,10 +9,14 @@ namespace ECP_resEst {
 
 
     @EntryPoint()
-    operation main(p_x : Int, p_y : Int, q_x : Int, q_y : Int) : Unit {
-        Fact(p_x != 0 and p_y != 0, "For nontrivial calculation, use nonzero base point");
+    operation main() : Unit {
         let num_bits = 256;
         let num_window = 16;
+
+        // input points
+        mutable p_x : Int = 8;
+        mutable p_y : Int = 9;
+        // let cur = 5;
 
         // convert input points to binary
         let bin_p_x = IntAsBoolArray(p_x, num_bits);
@@ -37,15 +41,12 @@ namespace ECP_resEst {
 
         // i-th window operation
 
-        let result_a : Int = 0;
-        let result_b : Int = 0;
-
         for i in 0..num_window-1 {
             let start = i * (num_bits / num_window);
             let end = (i + 1) * (num_bits / num_window) - 1;
             let control_interval = contrl_qubits[start..end];
-            let offset = start; // R * 2^start to account for the next batch of R.
-            let (result_a, result_b) = WindowStep(control_interval, input_x, input_y, p_x, p_y, offset, result_a, result_b);
+            //let offset = start; // R * 2^start to account for the next batch of R.
+            mutable (p_x, p_y) = WindowStep(control_interval, input_x, input_y, p_x, p_y, cur);
         }
 
         // inverse QFT on control qubits
@@ -60,8 +61,9 @@ namespace ECP_resEst {
         // just repeat the above steps
     }
 
-    operation WindowStep(control : Qubit[], x : Qubit[], y : Qubit[], p_x : Int, p_y : Int, offset : Int,
-                            result_a : Int, result_b : Int) : (Int, Int) {
+    operation repeat_window_steps(control : Qubit[], x : Qubit[], y : Qubit[], p_x : Int, p_y : Int, cur : Int) : Unit {}
+
+    operation WindowStep(control : Qubit[], x : Qubit[], y : Qubit[], p_x : Int, p_y : Int, cur : Int) : (Int, Int) {
         // for c in 0,...,2^windowSize - 1
         // compute (a, b) = [c]R and lambda_r = (3a^2 + c_1)/(2b)
         // (R is the basis point)
@@ -80,33 +82,35 @@ namespace ECP_resEst {
         use lambda_r = Qubit[n];
 
         // TODO: Look up table
-        let data : Bool[][] = [[], size = 2 ^ Length(control)]; // Is this size set up correctly?
+        mutable data : Bool[][] = [[], size = 2 ^ Length(control)]; // Is this size set up correctly?
         let precision = Length(x);
 
+        let result_a : Int = 0;
+        let result_b : Int = 0;
+
         for c in 0..2 ^ Length(control)-1 { //[c]R = R+R+...+R (add it c times)
-
-            // How to keep track of the (a,b) calculated in the previous batch?
-
-            // Initializing step
-            if offset == 0 and c == 0 {
+            if c == 0 {
+                // Point is 0 when c is 0 for all windows
                 let result_a : Int = 0;
                 let result_b : Int = 0;
             } elif result_a == 0 and result_b == 0 {
                 let result_a : Int = p_x;
                 let result_b : Int = p_y;
             } elif result_a == p_x and result_b == p_y {
+                // the equal case
                 // p_x, p_y are a,b in paper eqn(2)
-                let lambda : Int = (3 * p_x ^ 2 + c1) / (2 * p_y);
+                let lambda : Int = (3 * p_x ^ 2 + cur) / (2 * p_y);
                 let result_a = lambda ^ 2 - result_a - p_x;
                 let result_b = lambda * (p_x-result_a) - p_y;
             } else {
+                // the nonequal case
                 // p_x, p_y are a,b in paper eqn(2)
                 let lambda : Int = (result_b - p_y) / (result_a - p_x);
                 let result_a = lambda ^ 2 - result_a - p_x;
                 let result_b = lambda * (p_x-result_a) - p_y;
             }
 
-            let result_lambda_r : Int = (3 * result_a ^ 2 + c1) / (2 * result_b); //c1 is the eliptic curve parameter
+            let result_lambda_r : Int = (3 * result_a ^ 2 + cur) / (2 * result_b); //c1 is the eliptic curve parameter
 
             let bin_a = IntAsBoolArray(result_a, precision);
             let bin_b = IntAsBoolArray(result_b, precision);
@@ -124,6 +128,21 @@ namespace ECP_resEst {
 
         } apply {
             ECPointAdd(a, b, x, y, lambda_r);
+        }
+
+        // Doing another addition to get R = 2^(16j)P. Previous result_a and b are for (R = 2^(16j)-1)P
+        if result_a == p_x and result_b == p_y {
+            // the equal case
+            // p_x, p_y are a,b in paper eqn(2)
+            let lambda : Int = (3 * p_x ^ 2 + cur) / (2 * p_y);
+            let result_a = lambda ^ 2 - result_a - p_x;
+            let result_b = lambda * (p_x-result_a) - p_y;
+        } else {
+            // the nonequal case
+            // p_x, p_y are a,b in paper eqn(2)
+            let lambda : Int = (result_b - p_y) / (result_a - p_x);
+            let result_a = lambda ^ 2 - result_a - p_x;
+            let result_b = lambda * (p_x-result_a) - p_y;
         }
 
         return (result_a, result_b);
@@ -185,14 +204,14 @@ namespace ECP_resEst {
             X(f[0]);
             Controlled X([f[0]] + control, ancilla);
             for i in 1..Length(z_4)-1 {
-                nQubitToff(control + [z_4[i]], lambda[i], True);
+                nQubitToff(control + [z_4[i]], lambda[i], true);
             }
 
             X(f[0]);
             CNOT(control[0], ancilla); // Check implementation with mentors here
 
             for i in 1..Length(lambda)-1 {
-                nQubitToff(control + [lambda_r[i]], lambda[i], True);
+                nQubitToff(control + [lambda_r[i]], lambda[i], true);
             }
 
             nQubitEqual(lambda, lambda_r, f[0])
@@ -329,7 +348,8 @@ namespace ECP_resEst {
         // |x> -> |x^-1 mod p>
     }
 
-    operation nQubitToff(ctl : Qubit[], target : Qubit, color : Bool) : Unit {
+    operation nQubitToff(ctl : Qubit[], target : Qubit, color : Bool) : Unit
+    is Adj + Ctl {
         // n-qubit Toffoli gate
         // color is the color of the Toffoli gate
         // color = true: black Toffoli gate
