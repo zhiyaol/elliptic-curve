@@ -16,7 +16,7 @@ namespace ECP_resEst {
         // input points
         mutable p_x : Int = 8;
         mutable p_y : Int = 9;
-        // let cur = 5;
+        let c_0 = 5;
 
         // convert input points to binary
         let bin_p_x = IntAsBoolArray(p_x, num_bits);
@@ -39,40 +39,31 @@ namespace ECP_resEst {
             }
         }
 
-        // i-th window operation
+        // j-th window operation
 
-        for i in 0..num_window-1 {
-            let start = i * (num_bits / num_window);
-            let end = (i + 1) * (num_bits / num_window) - 1;
+        for j in 0..num_window-1 {
+            let start = j * (num_bits / num_window);
+            let end = (j + 1) * (num_bits / num_window) - 1;
             let control_interval = contrl_qubits[start..end];
-            //let offset = start; // R * 2^start to account for the next batch of R.
-            mutable (p_x, p_y) = WindowStep(control_interval, input_x, input_y, p_x, p_y, cur);
+            set (p_x, p_y) = WindowStep(control_interval, input_x, input_y, p_x, p_y, c_0);
         }
 
         // inverse QFT on control qubits
         Adjoint ApplyQFT(contrl_qubits);
 
         // measure control qubits, so now we have 'c'
-        for i in 0..num_bits-1 {
-            MResetZ(contrl_qubits[i]);
+        for ij in 0..num_bits-1 {
+            MResetZ(contrl_qubits[ij]);
         }
 
         // second phase estimation to get 'ck'
         // just repeat the above steps
     }
 
-    operation repeat_window_steps(control : Qubit[], x : Qubit[], y : Qubit[], p_x : Int, p_y : Int, cur : Int) : Unit {}
-
     operation WindowStep(control : Qubit[], x : Qubit[], y : Qubit[], p_x : Int, p_y : Int, cur : Int) : (Int, Int) {
-        // for c in 0,...,2^windowSize - 1
-        // compute (a, b) = [c]R and lambda_r = (3a^2 + c_1)/(2b)
-        // (R is the basis point)
-        // then set data w/= c <- (binResult + binResult2) // which means data[c] = [a, b, lambda_r]
-
         // then do the look up with address = |+>^16
         // since the address is in superposition, the target qubit will also be in superposition
-        // target qubit = a + b + lambda_r
-        // Select(data, address, target)  // which means target qubit = data[address]
+        // for each window, update basis point R.
 
         let n = Length(x);
         Fact(Length(x) == Length(y), "x and y must be of same size");
@@ -81,36 +72,35 @@ namespace ECP_resEst {
         use b = Qubit[n];
         use lambda_r = Qubit[n];
 
-        // TODO: Look up table
-        mutable data : Bool[][] = [[], size = 2 ^ Length(control)]; // Is this size set up correctly?
+        mutable data : Bool[][] = [[], size = 2 ^ Length(control)];
         let precision = Length(x);
 
-        let result_a : Int = 0;
-        let result_b : Int = 0;
+        mutable result_a : Int = 0;
+        mutable result_b : Int = 0;
 
         for c in 0..2 ^ Length(control)-1 { //[c]R = R+R+...+R (add it c times)
             if c == 0 {
                 // Point is 0 when c is 0 for all windows
-                let result_a : Int = 0;
-                let result_b : Int = 0;
+                set result_a = 0;
+                set result_b = 0;
             } elif result_a == 0 and result_b == 0 {
-                let result_a : Int = p_x;
-                let result_b : Int = p_y;
+                set result_a = p_x;
+                set result_b = p_y;
             } elif result_a == p_x and result_b == p_y {
                 // the equal case
                 // p_x, p_y are a,b in paper eqn(2)
                 let lambda : Int = (3 * p_x ^ 2 + cur) / (2 * p_y);
-                let result_a = lambda ^ 2 - result_a - p_x;
-                let result_b = lambda * (p_x-result_a) - p_y;
+                set result_a = lambda ^ 2 - result_a - p_x;
+                set result_b = lambda * (p_x-result_a) - p_y;
             } else {
                 // the nonequal case
                 // p_x, p_y are a,b in paper eqn(2)
                 let lambda : Int = (result_b - p_y) / (result_a - p_x);
-                let result_a = lambda ^ 2 - result_a - p_x;
-                let result_b = lambda * (p_x-result_a) - p_y;
+                set result_a = lambda ^ 2 - result_a - p_x;
+                set result_b = lambda * (p_x-result_a) - p_y;
             }
 
-            let result_lambda_r : Int = (3 * result_a ^ 2 + cur) / (2 * result_b); //c1 is the eliptic curve parameter
+            let result_lambda_r : Int = (3 * result_a ^ 2 + cur) / (2 * result_b); //cur is the eliptic curve parameter
 
             let bin_a = IntAsBoolArray(result_a, precision);
             let bin_b = IntAsBoolArray(result_b, precision);
@@ -118,8 +108,6 @@ namespace ECP_resEst {
             let bin_lambda_r = IntAsBoolArray(result_lambda_r, precision);
 
             set data w/= c <- (bin_a + bin_b + bin_lambda_r);
-            // Set up as look up lambda_r from c.
-            // Could also change to lambda_r from a,b but would probably require two lookup tables instead of 1
         }
 
         within {
@@ -135,25 +123,22 @@ namespace ECP_resEst {
             // the equal case
             // p_x, p_y are a,b in paper eqn(2)
             let lambda : Int = (3 * p_x ^ 2 + cur) / (2 * p_y);
-            let result_a = lambda ^ 2 - result_a - p_x;
-            let result_b = lambda * (p_x-result_a) - p_y;
+            set result_a = lambda ^ 2 - result_a - p_x;
+            set result_b = lambda * (p_x-result_a) - p_y;
         } else {
             // the nonequal case
             // p_x, p_y are a,b in paper eqn(2)
             let lambda : Int = (result_b - p_y) / (result_a - p_x);
-            let result_a = lambda ^ 2 - result_a - p_x;
-            let result_b = lambda * (p_x-result_a) - p_y;
+            set result_a = lambda ^ 2 - result_a - p_x;
+            set result_b = lambda * (p_x-result_a) - p_y;
         }
 
         return (result_a, result_b);
-
-        // for each window, we need to change the basis point R.
     }
 
     operation Select(data : Bool[][], address : Qubit[], target : Qubit[]) : Unit is Adj + Ctl {}
 
     operation ECPointAdd(a : Qubit[], b : Qubit[], x : Qubit[], y : Qubit[], lambda_r : Qubit[]) : Unit {
-        // input: a, b, x, y, lambda_r
         let n = Length(x);
         use z_1 = Qubit[n];
         use z_2 = Qubit[n];
@@ -208,7 +193,7 @@ namespace ECP_resEst {
             }
 
             X(f[0]);
-            CNOT(control[0], ancilla); // Check implementation with mentors here
+            CNOT(control[0], ancilla);
 
             for i in 1..Length(lambda)-1 {
                 nQubitToff(control + [lambda_r[i]], lambda[i], true);
@@ -301,7 +286,7 @@ namespace ECP_resEst {
 
     // the following section is for the six modular arithmetic operations
     operation ModAdd(x : Qubit[], y : Qubit[]) : Unit
-    is Adj + Ctl { // Zhiyao added this line so the function can be controlled and adjointed
+    is Adj + Ctl {
         // x, y are the two numbers to be added
         // the result is stored in y
         // |y> -> |y + x mod p>
