@@ -61,7 +61,6 @@ namespace ECP_resEst {
     }
 
     operation WindowStep(control : Qubit[], x : Qubit[], y : Qubit[], p_x : Int, p_y : Int, cur : Int) : (Int, Int) {
-        // then do the look up with address = |+>^16
         // since the address is in superposition, the target qubit will also be in superposition
         // for each window, update basis point R.
 
