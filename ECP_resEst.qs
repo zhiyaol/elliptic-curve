@@ -211,6 +211,14 @@ namespace ECP_resEst {
         // x is the number to be squared
         // the result is stored in x
         // |x> -> |2x mod p>
+
+        use most_sig = Qubit();
+        use least_sig = Qubit();
+
+        //Add(-p)
+        //Add(+p)
+
+        CNOT(least_sig,most_sig);
     }
 
     operation ModMult(x: Qubit[], y: Qubit[], garb: Qubit[], modMultResult: Qubit[]): Unit 
