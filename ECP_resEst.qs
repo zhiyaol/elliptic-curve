@@ -16,7 +16,7 @@ namespace ECP_resEst {
         // input points
         mutable p_x : Int = 8;
         mutable p_y : Int = 9;
-        // let cur = 5;
+        let c_0 = 5;
 
         // convert input points to binary
         let bin_p_x = IntAsBoolArray(p_x, num_bits);
@@ -39,29 +39,26 @@ namespace ECP_resEst {
             }
         }
 
-        // i-th window operation
+        // j-th window operation
 
-        for i in 0..num_window-1 {
-            let start = i * (num_bits / num_window);
-            let end = (i + 1) * (num_bits / num_window) - 1;
+        for j in 0..num_window-1 {
+            let start = j * (num_bits / num_window);
+            let end = (j + 1) * (num_bits / num_window) - 1;
             let control_interval = contrl_qubits[start..end];
-            //let offset = start; // R * 2^start to account for the next batch of R.
-            mutable (p_x, p_y) = WindowStep(control_interval, input_x, input_y, p_x, p_y, cur);
+            set (p_x, p_y) = WindowStep(control_interval, input_x, input_y, p_x, p_y, c_0);
         }
 
         // inverse QFT on control qubits
         Adjoint ApplyQFT(contrl_qubits);
 
         // measure control qubits, so now we have 'c'
-        for i in 0..num_bits-1 {
-            MResetZ(contrl_qubits[i]);
+        for ij in 0..num_bits-1 {
+            MResetZ(contrl_qubits[ij]);
         }
 
         // second phase estimation to get 'ck'
         // just repeat the above steps
     }
-
-    operation repeat_window_steps(control : Qubit[], x : Qubit[], y : Qubit[], p_x : Int, p_y : Int, cur : Int) : Unit {}
 
     operation WindowStep(control : Qubit[], x : Qubit[], y : Qubit[], p_x : Int, p_y : Int, cur : Int) : (Int, Int) {
         // for c in 0,...,2^windowSize - 1
@@ -85,29 +82,29 @@ namespace ECP_resEst {
         mutable data : Bool[][] = [[], size = 2 ^ Length(control)]; // Is this size set up correctly?
         let precision = Length(x);
 
-        let result_a : Int = 0;
-        let result_b : Int = 0;
+        mutable result_a : Int = 0;
+        mutable result_b : Int = 0;
 
         for c in 0..2 ^ Length(control)-1 { //[c]R = R+R+...+R (add it c times)
             if c == 0 {
                 // Point is 0 when c is 0 for all windows
-                let result_a : Int = 0;
-                let result_b : Int = 0;
+                set result_a = 0;
+                set result_b = 0;
             } elif result_a == 0 and result_b == 0 {
-                let result_a : Int = p_x;
-                let result_b : Int = p_y;
+                set result_a = p_x;
+                set result_b = p_y;
             } elif result_a == p_x and result_b == p_y {
                 // the equal case
                 // p_x, p_y are a,b in paper eqn(2)
                 let lambda : Int = (3 * p_x ^ 2 + cur) / (2 * p_y);
-                let result_a = lambda ^ 2 - result_a - p_x;
-                let result_b = lambda * (p_x-result_a) - p_y;
+                set result_a = lambda ^ 2 - result_a - p_x;
+                set result_b = lambda * (p_x-result_a) - p_y;
             } else {
                 // the nonequal case
                 // p_x, p_y are a,b in paper eqn(2)
                 let lambda : Int = (result_b - p_y) / (result_a - p_x);
-                let result_a = lambda ^ 2 - result_a - p_x;
-                let result_b = lambda * (p_x-result_a) - p_y;
+                set result_a = lambda ^ 2 - result_a - p_x;
+                set result_b = lambda * (p_x-result_a) - p_y;
             }
 
             let result_lambda_r : Int = (3 * result_a ^ 2 + cur) / (2 * result_b); //c1 is the eliptic curve parameter
@@ -135,14 +132,14 @@ namespace ECP_resEst {
             // the equal case
             // p_x, p_y are a,b in paper eqn(2)
             let lambda : Int = (3 * p_x ^ 2 + cur) / (2 * p_y);
-            let result_a = lambda ^ 2 - result_a - p_x;
-            let result_b = lambda * (p_x-result_a) - p_y;
+            set result_a = lambda ^ 2 - result_a - p_x;
+            set result_b = lambda * (p_x-result_a) - p_y;
         } else {
             // the nonequal case
             // p_x, p_y are a,b in paper eqn(2)
             let lambda : Int = (result_b - p_y) / (result_a - p_x);
-            let result_a = lambda ^ 2 - result_a - p_x;
-            let result_b = lambda * (p_x-result_a) - p_y;
+            set result_a = lambda ^ 2 - result_a - p_x;
+            set result_b = lambda * (p_x-result_a) - p_y;
         }
 
         return (result_a, result_b);
