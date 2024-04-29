@@ -6,7 +6,12 @@ namespace ECP_resEst {
     open Microsoft.Quantum.Unstable.Arithmetic;
     open Microsoft.Quantum.Unstable.TableLookup;
     open Microsoft.Quantum.Diagnostics;
+    open Microsoft.Quantum.Unstable.Arithmetic;
 
+    function get_p() : BigInt {
+        let p : BigInt = 256L;
+        return p;
+    }
 
     @EntryPoint()
     operation main() : Unit {
@@ -16,6 +21,7 @@ namespace ECP_resEst {
         // input points
         let p_x : Int = 8;
         let p_y : Int = 9;
+
 
         // convert input points to binary
         let bin_p_x = IntAsBoolArray(p_x, num_bits);
@@ -28,6 +34,9 @@ namespace ECP_resEst {
 
         // initialize qubits; control qubit all in |+> state
         // load binary x and y into qubits
+        // the qubit arithmetic follows little endian convention
+        // the least significant bit is at the first qubit
+        // the most significant bit is at the last qubit
         for i in 0..num_bits-1 {
             H(contrl_qubits[i]);
             if (bin_p_x[i]) {
@@ -140,15 +149,15 @@ namespace ECP_resEst {
             X(f[0]);
             Controlled X([f[0]]+control, ancilla); // Unsure how I concatenate qubit lists and qubits into one list.
             for i in 1..Length(z_4)-1 {
-                nQubitToff(control+[z_4[i]],lambda[i],True); // Unsure how I concatenate qubit lists and qubits into one list
-                }
+                nQubitToff(control+[z_4[i]], lambda[i], true); // Unsure how I concatenate qubit lists and qubits into one list
+            }
 
             X(f[0]);
             CNOT(control[0],ancilla); // Check implementation with mentors here
             
             for i in 1..Length(lambda)-1 {
-                nQubitToff(control+[lambda_r[i]],lambda[i],True); // Unsure how I concatenate qubit lists and qubits into one list
-                }
+                nQubitToff(control+[lambda_r[i]], lambda[i], true); // Unsure how I concatenate qubit lists and qubits into one list
+            }
 
             nQubitEqual(lambda,lambda_r,f[0])
         }
@@ -225,9 +234,9 @@ namespace ECP_resEst {
             ModMult(x,y,z_3,z_4);
         } apply {
             for i in 1..Length(z_4)-1 {
-                nQubitToff(control+[z_4[i]],lambda[i],True);
+                nQubitToff(control+[z_4[i]], lambda[i], true);
                 // Unsure how I concatenate qubit lists and qubits into one list
-                }
+            }
         }
     }
 
@@ -235,8 +244,28 @@ namespace ECP_resEst {
                        x: Qubit[], y: Qubit[], z_1: Qubit[], z_2: Qubit[], 
                        z_3: Qubit[], z_4: Qubit[], lambda: Qubit[], lambda_r: Qubit[]) : Unit {
         // step 6
+        nQubitToff(f[1..3], control[0], false);
+        for i in 0..Length(x)-1 {
+            CCNOT(f[3], a[i], x[i]);
+        }
+        for i in 0..Length(x)-1 {
+            CCNOT(f[3], b[i], y[i]);
+        }
+
+        // check (a, b) = (x, y)
+        use ancilla = Qubit[2];
+        nQubitEqual(a, x, ancilla[0]);
+        nQubitEqual(b, y, ancilla[1]);
+        CCNOT(ancilla[0], ancilla[1], f[3]);
 
 
+        nQubitToff(a + b, f[2], false);
+        Controlled ModSub(f[0..1], (a, x));
+        Controlled ModSub(f[0..1], (b, y));
+
+        // This is lazy way; can certainly find a more economic way
+        nQubitToff(x + y, f[0], false);
+        nQubitToff(x + y, f[1], false);
     }
 
 
@@ -246,6 +275,17 @@ namespace ECP_resEst {
         // x, y are the two numbers to be added
         // the result is stored in y
         // |y> -> |y + x mod p>
+
+        use ancilla = Qubit[1];
+        IncByLE(x, y + ancilla);
+
+        // Add(-p) to y and ancilla
+        Adjoint IncByL(get_p(), y + ancilla);
+        // controlled by ancilla and add(p) to y
+        Controlled IncByL(ancilla, (get_p(), y));
+        ApplyIfLessLE(X, x, y, ancilla[0]);
+
+        X(ancilla[0]);
     }
 
     operation ModSub(x: Qubit[], y: Qubit[]): Unit 
@@ -253,6 +293,17 @@ namespace ECP_resEst {
         // x, y are the two numbers to be subtracted
         // the result is stored in y
         // |y> -> |y - x mod p>
+
+        // Lingnan: not sure about this part, the uncompute may be not the adjoint structure.
+        // Will ask in the next meeting.
+        within {
+            for i in 0..Length(x)-1 {
+                X(x[i]);
+            }
+            IncByL(get_p() + 1L, x);
+        } apply {
+            ModAdd(x, y);
+        }
     }
 
     operation ModNeg(x: Qubit[]): Unit 
@@ -260,6 +311,13 @@ namespace ECP_resEst {
         // x is the number to be negated
         // the result is stored in x
         // |x> -> |-x mod p>
+        use ancilla = Qubit[1];
+        nQubitToff(x, ancilla[0], false);
+        for i in 0..Length(x)-1 {
+            CNOT(ancilla[0], x[i]);
+        }
+        Controlled IncByL(ancilla, (get_p() + 1L, x));
+        nQubitToff(x, ancilla[0], false);
     }
 
     operation ModDbl(x: Qubit[]): Unit 
@@ -289,7 +347,7 @@ namespace ECP_resEst {
         // |x> -> |x^-1 mod p>
     }
 
-    operation nQubitToff(ctl: Qubit[], target: Qubit, color: Bool): Unit {
+    operation nQubitToff(ctl: Qubit[], target: Qubit, color: Bool): Unit is Adj + Ctl{
         // n-qubit Toffoli gate
         // color is the color of the Toffoli gate
         // color = true: black Toffoli gate
