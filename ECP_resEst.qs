@@ -335,9 +335,49 @@ namespace ECP_resEst {
         let n = Length(x);
         Fact(n == Length(y), "x and y must be of same size");
 
+        // for n bits number, there will be n/4 ModMultStep operations
+        for step_idx in 0..n/4-1 {
+            ModMultStep(x[step_idx*4 .. (step_idx+1)*4], y, garb, modMultResult);
+        }
 
+        use ancilla = Qubit[1];
+        Adjoint IncByL(get_p(), ancilla + modMultResult);
+        Controlled IncByL(ancilla, (get_p(), modMultResult));
+    }
 
-        // there will a ModMultStep operation that is called multiple times
+    operation ModMultStep(x: Qubit[], y: Qubit[], garb: Qubit[], modMultResult: Qubit[]): 
+    Unit is Adj + Ctl{
+        Fact(Length(garb) == 4, "garb qubit[] must be of size 4");
+        Fact(Length(x) == 4, "x qubit[] is the 4 controlled qubit for addition");
+
+        use ancilla = Qubit[4];
+
+        for i in 0..3 {
+            for addition_step in 0..2^i {
+                Controlled IncByLE([x[i]], (y, ancilla + modMultResult));
+            }
+        }
+
+        // cnot modMultResult to garb (not sure about this part, pending Mathias' response)
+        // CNOT(modMultResult[0], garb[0]);
+
+        // lookup table
+        let precision = Length(x) + 4;
+        mutable table: Bool[][] = [[], size = 17];
+        for c in 0..16 {
+            mutable result: BigInt = (-1L / get_p()) % 16L * get_p() ;
+
+            let binResult = BigIntAsBoolArray(result, precision);
+
+            set table w/= c <- binResult;
+        }
+
+        use lookUpAncilla = Qubit[precision];
+        within {
+            Select(table, garb, lookUpAncilla);
+        } apply {
+            IncByLE(lookUpAncilla, ancilla + modMultResult);
+        }
     }
 
     operation ModInv(x: Qubit[], garb_1: Qubit[], garb_2: Qubit[]): Unit 
