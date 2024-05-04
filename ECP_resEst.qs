@@ -305,11 +305,30 @@ namespace ECP_resEst {
         // |x> -> |-x mod p>
     }
 
-    operation ModDbl(x : Qubit[]) : Unit
-    is Adj + Ctl {
-        // x is the number to be squared
-        // the result is stored in x
-        // |x> -> |2x mod p>
+    // Mathias's implementation
+    // Computes (xs += xs) mod p
+    //
+    // References:
+    //     - [arXiv:2306.08585](https://arxiv.org/pdf/2306.08585.pdf)
+    operation ModDbl(mod : BigInt, xs : Qubit[]) : Unit is Adj + Ctl {
+        use lsb = Qubit();
+        use msb = Qubit();
+
+        Adjoint IncByLUsingIncByLE(RippleCarryCGIncByLE, mod, [lsb] + xs + [msb]);
+        Controlled IncByLUsingIncByLE([msb], (RippleCarryCGIncByLE, mod, [lsb] + xs));
+
+        CNOT(lsb, msb);
+        X(msb);
+
+        CyclicRotateRegister([lsb] + xs); 
+        // Dropping original most significant qubit in xs. How do we know it's not 1?
+    }
+    
+    internal operation CyclicRotateRegister(qs : Qubit[]) : Unit is Adj + Ctl {
+        // Keep lsb as lsb so doubling actually happens
+        SwapReverseRegister(qs); // Uses SWAP gates to Reversed the order of the qubits in a register.
+        SwapReverseRegister(Rest(qs)); 
+        //Rest: Creates an array that is equal to an input array except that the first array element is dropped.
     }
 
     operation ModMult(x : Qubit[], y : Qubit[], garb : Qubit[], modMultResult : Qubit[]) : Unit
