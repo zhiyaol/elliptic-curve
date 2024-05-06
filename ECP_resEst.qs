@@ -19,7 +19,7 @@ namespace ECP_resEst {
         let c_0 = 5;
 
         // convert input points to binary
-        let bin_p_x = IntAsBoolArray(p_x, num_bits);
+        let bin_p_x = IntAsBoolArray(p_x, num_bits); // is this little-Endian?
         let bin_p_y = IntAsBoolArray(p_y, num_bits);
 
         // qubits in the main routine
@@ -71,13 +71,14 @@ namespace ECP_resEst {
         use b = Qubit[n];
         use lambda_r = Qubit[n];
 
-        mutable data : Bool[][] = [[], size = 2 ^ Length(control)];
+        mutable data : Bool[][] = [[], size = 2^Length(control)];
         let precision = Length(x);
 
         mutable result_a : Int = 0;
         mutable result_b : Int = 0;
 
-        for c in 0..2 ^ Length(control)-1 { //[c]R = R+R+...+R (add it c times)
+        for c in 0..2^Length(control)-1 {
+            //[c]R = R+R+...+R (add it c times)
             if c == 0 {
                 // Point is 0 when c is 0 for all windows
                 set result_a = 0;
@@ -88,18 +89,18 @@ namespace ECP_resEst {
             } elif result_a == p_x and result_b == p_y {
                 // the equal case
                 // p_x, p_y are a,b in paper eqn(2)
-                let lambda : Int = (3 * p_x ^ 2 + cur) / (2 * p_y);
-                set result_a = lambda ^ 2 - result_a - p_x;
+                let lambda : Int = (3 * p_x^2 + cur) / (2 * p_y);
+                set result_a = lambda^2 - result_a - p_x;
                 set result_b = lambda * (p_x-result_a) - p_y;
             } else {
                 // the nonequal case
                 // p_x, p_y are a,b in paper eqn(2)
                 let lambda : Int = (result_b - p_y) / (result_a - p_x);
-                set result_a = lambda ^ 2 - result_a - p_x;
+                set result_a = lambda^2 - result_a - p_x;
                 set result_b = lambda * (p_x-result_a) - p_y;
             }
 
-            let result_lambda_r : Int = (3 * result_a ^ 2 + cur) / (2 * result_b); //cur is the eliptic curve parameter
+            let result_lambda_r : Int = (3 * result_a^2 + cur) / (2 * result_b); //cur is the eliptic curve parameter
 
             let bin_a = IntAsBoolArray(result_a, precision);
             let bin_b = IntAsBoolArray(result_b, precision);
@@ -121,14 +122,14 @@ namespace ECP_resEst {
         if result_a == p_x and result_b == p_y {
             // the equal case
             // p_x, p_y are a,b in paper eqn(2)
-            let lambda : Int = (3 * p_x ^ 2 + cur) / (2 * p_y);
-            set result_a = lambda ^ 2 - result_a - p_x;
+            let lambda : Int = (3 * p_x^2 + cur) / (2 * p_y);
+            set result_a = lambda^2 - result_a - p_x;
             set result_b = lambda * (p_x-result_a) - p_y;
         } else {
             // the nonequal case
             // p_x, p_y are a,b in paper eqn(2)
             let lambda : Int = (result_b - p_y) / (result_a - p_x);
-            set result_a = lambda ^ 2 - result_a - p_x;
+            set result_a = lambda^2 - result_a - p_x;
             set result_b = lambda * (p_x-result_a) - p_y;
         }
 
@@ -157,9 +158,7 @@ namespace ECP_resEst {
     }
 
 
-    operation step_one(f : Qubit[], control : Qubit[], a : Qubit[], b : Qubit[],
-                       x : Qubit[], y : Qubit[], z_1 : Qubit[], z_2 : Qubit[],
-                       z_3 : Qubit[], z_4 : Qubit[], lambda : Qubit[], lambda_r : Qubit[]) : Unit {
+    operation step_one(f : Qubit[], control : Qubit[], a : Qubit[], b : Qubit[], x : Qubit[], y : Qubit[], z_1 : Qubit[], z_2 : Qubit[], z_3 : Qubit[], z_4 : Qubit[], lambda : Qubit[], lambda_r : Qubit[]) : Unit {
         // step 1
         nQubitEqual(a, x, f[0]);
 
@@ -173,9 +172,7 @@ namespace ECP_resEst {
         nQubitToff(f[1..3], control[0], false);
     }
 
-    operation step_two(f : Qubit[], control : Qubit[], a : Qubit[], b : Qubit[],
-                       x : Qubit[], y : Qubit[], z_1 : Qubit[], z_2 : Qubit[],
-                       z_3 : Qubit[], z_4 : Qubit[], lambda : Qubit[], lambda_r : Qubit[]) : Unit {
+    operation step_two(f : Qubit[], control : Qubit[], a : Qubit[], b : Qubit[], x : Qubit[], y : Qubit[], z_1 : Qubit[], z_2 : Qubit[], z_3 : Qubit[], z_4 : Qubit[], lambda : Qubit[], lambda_r : Qubit[]) : Unit {
         // step 2
         ModSub(a, x);
         Controlled ModSub(control, (b, y));
@@ -202,9 +199,7 @@ namespace ECP_resEst {
         }
     }
 
-    operation step_three(f : Qubit[], control : Qubit[], a : Qubit[], b : Qubit[],
-                       x : Qubit[], y : Qubit[], z_1 : Qubit[], z_2 : Qubit[],
-                       z_3 : Qubit[], z_4 : Qubit[], lambda : Qubit[], lambda_r : Qubit[]) : Unit {
+    operation step_three(f : Qubit[], control : Qubit[], a : Qubit[], b : Qubit[], x : Qubit[], y : Qubit[], z_1 : Qubit[], z_2 : Qubit[], z_3 : Qubit[], z_4 : Qubit[], lambda : Qubit[], lambda_r : Qubit[]) : Unit {
         // step 3
         let n = Length(x);
 
@@ -225,9 +220,7 @@ namespace ECP_resEst {
         }
     }
 
-    operation step_four(f : Qubit[], control : Qubit[], a : Qubit[], b : Qubit[],
-                       x : Qubit[], y : Qubit[], z_1 : Qubit[], z_2 : Qubit[],
-                       z_3 : Qubit[], z_4 : Qubit[], lambda : Qubit[], lambda_r : Qubit[]) : Unit {
+    operation step_four(f : Qubit[], control : Qubit[], a : Qubit[], b : Qubit[], x : Qubit[], y : Qubit[], z_1 : Qubit[], z_2 : Qubit[], z_3 : Qubit[], z_4 : Qubit[], lambda : Qubit[], lambda_r : Qubit[]) : Unit {
         // step 4
         let n = Length(x);
         within {
@@ -249,9 +242,7 @@ namespace ECP_resEst {
     }
 
 
-    operation step_five(f : Qubit[], control : Qubit[], a : Qubit[], b : Qubit[],
-                       x : Qubit[], y : Qubit[], z_1 : Qubit[], z_2 : Qubit[],
-                       z_3 : Qubit[], z_4 : Qubit[], lambda : Qubit[], lambda_r : Qubit[]) : Unit {
+    operation step_five(f : Qubit[], control : Qubit[], a : Qubit[], b : Qubit[], x : Qubit[], y : Qubit[], z_1 : Qubit[], z_2 : Qubit[], z_3 : Qubit[], z_4 : Qubit[], lambda : Qubit[], lambda_r : Qubit[]) : Unit {
         // step 5
         Adjoint step_five_helper(control, x, y, z_1, z_2, z_3, z_4, lambda);
 
@@ -260,9 +251,7 @@ namespace ECP_resEst {
         Controlled ModSub(control, (b, y));
     }
 
-    operation step_five_helper(control : Qubit[], x : Qubit[], y : Qubit[], z_1 : Qubit[], z_2 : Qubit[],
-                                z_3 : Qubit[], z_4 : Qubit[], lambda : Qubit[]) : Unit
-    is Adj + Ctl {
+    operation step_five_helper(control : Qubit[], x : Qubit[], y : Qubit[], z_1 : Qubit[], z_2 : Qubit[], z_3 : Qubit[], z_4 : Qubit[], lambda : Qubit[]) : Unit is Adj + Ctl {
         // Helper Function that fits in the uncompute box in step 5
         within {
             ModInv(x, z_1, z_2);
@@ -274,9 +263,7 @@ namespace ECP_resEst {
         }
     }
 
-    operation step_six(f : Qubit[], control : Qubit[], a : Qubit[], b : Qubit[],
-                       x : Qubit[], y : Qubit[], z_1 : Qubit[], z_2 : Qubit[],
-                       z_3 : Qubit[], z_4 : Qubit[], lambda : Qubit[], lambda_r : Qubit[]) : Unit {
+    operation step_six(f : Qubit[], control : Qubit[], a : Qubit[], b : Qubit[], x : Qubit[], y : Qubit[], z_1 : Qubit[], z_2 : Qubit[], z_3 : Qubit[], z_4 : Qubit[], lambda : Qubit[], lambda_r : Qubit[]) : Unit {
         // step 6
 
 
@@ -284,22 +271,19 @@ namespace ECP_resEst {
 
 
     // the following section is for the six modular arithmetic operations
-    operation ModAdd(x : Qubit[], y : Qubit[]) : Unit
-    is Adj + Ctl {
+    operation ModAdd(x : Qubit[], y : Qubit[]) : Unit is Adj + Ctl {
         // x, y are the two numbers to be added
         // the result is stored in y
         // |y> -> |y + x mod p>
     }
 
-    operation ModSub(x : Qubit[], y : Qubit[]) : Unit
-    is Adj + Ctl {
+    operation ModSub(x : Qubit[], y : Qubit[]) : Unit is Adj + Ctl {
         // x, y are the two numbers to be subtracted
         // the result is stored in y
         // |y> -> |y - x mod p>
     }
 
-    operation ModNeg(x : Qubit[]) : Unit
-    is Adj + Ctl {
+    operation ModNeg(x : Qubit[]) : Unit is Adj + Ctl {
         // x is the number to be negated
         // the result is stored in x
         // |x> -> |-x mod p>
@@ -320,19 +304,18 @@ namespace ECP_resEst {
         CNOT(lsb, msb);
         X(msb);
 
-        CyclicRotateRegister([lsb] + xs); 
+        CyclicRotateRegister([lsb] + xs);
         // Dropping original most significant qubit in xs. How do we know it's not 1?
     }
-    
+
     internal operation CyclicRotateRegister(qs : Qubit[]) : Unit is Adj + Ctl {
         // Keep lsb as lsb so doubling actually happens
         SwapReverseRegister(qs); // Uses SWAP gates to Reversed the order of the qubits in a register.
-        SwapReverseRegister(Rest(qs)); 
+        SwapReverseRegister(Rest(qs));
         //Rest: Creates an array that is equal to an input array except that the first array element is dropped.
     }
 
-    operation ModMult(x : Qubit[], y : Qubit[], garb : Qubit[], modMultResult : Qubit[]) : Unit
-    is Adj + Ctl {
+    operation ModMult(x : Qubit[], y : Qubit[], garb : Qubit[], modMultResult : Qubit[]) : Unit is Adj + Ctl {
         // x, y are the two numbers to be multiplied
         // the result is stored in modMultResult
         // modMultResult = |0> -> |xy mod p>
@@ -344,15 +327,88 @@ namespace ECP_resEst {
         // there will a ModMultStep operation that is called multiple times
     }
 
-    operation ModInv(x : Qubit[], garb_1 : Qubit[], garb_2 : Qubit[]) : Unit
-    is Adj + Ctl {
+    operation ModInv(x : Qubit[], garb_1 : Qubit[], garb_2 : Qubit[]) : Unit is Adj + Ctl {
         // x is the number to be inverted
         // the result is stored in x
         // |x> -> |x^-1 mod p>
+
+        use b = Qubit();
+        use a = Qubit();
+        use f = Qubit();
+        X(f);
+
+        let n = Length(x);
+        use u = Qubit[n]; // need to initialize to p. do after checking qubit ordering.
+        use r = Qubit[n];
+        use s = Qubit[n]; // need to initialize to 1. do after checking qubit ordering.
+
+        for i in 0..n-1 {
+            helper_mod_inv(b, a, f, u, x, r, s, garb_1[i]); // v is x
+        }
+
+        for j in 0..n-1 {
+            helper_mod_inv(b, a, f, u, x, r, s, garb_2[j]);
+        }
+
+        // Neg: Is this Neg ModNeg?
+
+        IncByL(p, r);
+
+        bunch_swap(x, r);
     }
 
-    operation nQubitToff(ctl : Qubit[], target : Qubit, color : Bool) : Unit
-    is Adj + Ctl {
+    operation helper_mod_inv(b : Qubit, a : Qubit, f : Qubit, u : Qubit[], v : Qubit[], r : Qubit[], s : Qubit[], Garbit : Qubit) : Unit is Adj + Ctl {
+        Controlled nQubitToff([f], (v, Garbit, false));
+        CNOT(Garbit, f);
+
+        X(u[0]); //u[0] or u[-1]? what convention? Double check qubit ordering.
+        CCNOT(u[0], f, a); //u[0] or u[-1]? Using top to down 0 to n-1 for now
+        X(u[0]); //u[0] or u[-1]? Questioning this as for ModAdd and ModDbl, most significant bit is added to the bottom
+
+        X(a);
+        X(v[0]);
+        Controlled X(([a, f, v[0]]), Garbit); //check qubit ordering
+        X(a);
+        X(v[0]);
+
+        CNOT(a, b);
+        CNOT(Garbit, b);
+
+        X(b);
+
+        use helper_bit = Qubit();
+        ApplyIfLessLE(X, u, v, helper_bit);
+        Controlled X([helper_bit, b, f], a);
+        Controlled X([helper_bit, b, f], Garbit);
+
+        Controlled bunch_swap([a], (u, v));
+        Controlled bunch_swap([a], (r, s));
+
+        Controlled ModSub([b, f], (u, v));
+        Controlled ModAdd([b, f], (r, s));
+        X(b);
+
+        CNOT(a, b);
+        CNOT(Garbit, b);
+
+        // Controlled dividing by 2. Remove least significant qubit and shift order? What if value is odd?
+
+        ModDbl(p, r); // ugh not being able to define constant for the entire file is a pain
+        Controlled bunch_swap([a], (u, v));
+        Controlled bunch_swap([a], (r, s));
+        X(s[0]);
+        CNOT(s[0], a);
+        X(s[0]);
+    }
+
+    operation bunch_swap(reg1 : Qubit[], reg2 : Qubit[]) : Unit is Adj + Ctl {
+        Fact(Length(reg1) == Length(reg2), "Two registers being swapped must be of the same size");
+        for ij in 0..Length(reg1)-1 {
+            SWAP(reg1[ij], reg2[ij]);
+        }
+    }
+
+    operation nQubitToff(ctl : Qubit[], target : Qubit, color : Bool) : Unit is Adj + Ctl {
         // n-qubit Toffoli gate
         // color is the color of the Toffoli gate
         // color = true: black Toffoli gate
