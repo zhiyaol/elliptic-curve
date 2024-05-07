@@ -367,7 +367,7 @@ namespace ECP {
         // Keep lsb as lsb so doubling actually happens
         SwapReverseRegister(qs); // Uses SWAP gates to Reversed the order of the qubits in a register.
         SwapReverseRegister(Rest(qs));
-        //Rest: Creates an array that is equal to an input array except that the first array element is dropped.
+        //Rest: Creates an array that is equal to an input array except that the first array element is dropped. in Arrays.
     }
 
     operation ModMult(x : Qubit[], y : Qubit[], garb : Qubit[], modMultResult : Qubit[]) : Unit is Adj + Ctl {
@@ -455,10 +455,7 @@ namespace ECP {
         CNOT(a, b);
         CNOT(Garbit, b);
 
-        // Controlled dividing by 2.
-        Controlled CircularlyShifted([f], (-1, v));
-        // hoping to use circularlyshifted in Microsoft.Quantum.Arrays, but it can't be controlled.
-        // Either ask next time, or implement it myself when I feel like it.
+        Controlled DivBy2([f], v);
 
         ModDbl(r);
         Controlled bunch_swap([a], (u, v));
@@ -468,6 +465,14 @@ namespace ECP {
         X(s[0]);
     }
 
+    operation DivBy2(x : Qubit[]) : Unit is Adj + Ctl {
+        // x is the number to be divided by 2
+        // the result is stored in x
+        // |x> -> |x/2>
+        CircularlyShifted((-1, x));
+        // hoping to use circularlyshifted in Microsoft.Quantum.Arrays, but it can't be controlled.
+        // so creating a function containing it.
+    }
     operation bunch_swap(reg1 : Qubit[], reg2 : Qubit[]) : Unit is Adj + Ctl {
         Fact(Length(reg1) == Length(reg2), "Two registers being swapped must be of the same size");
         for ij in 0..Length(reg1)-1 {
