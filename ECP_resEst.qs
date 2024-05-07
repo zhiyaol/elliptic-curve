@@ -389,17 +389,62 @@ namespace ECP_resEst {
         //Rest: Creates an array that is equal to an input array except that the first array element is dropped.
     }
 
-    operation ModMult(x : Qubit[], y : Qubit[], garb : Qubit[], modMultResult : Qubit[]) : Unit
-    is Adj + Ctl {
+    operation ModMult(x: Qubit[], y: Qubit[], garb: Qubit[], modMultResult: Qubit[]): Unit 
+    is Adj + Ctl{
         // x, y are the two numbers to be multiplied
         // the result is stored in modMultResult
         // modMultResult = |0> -> |xy mod p>
         let n = Length(x);
         Fact(n == Length(y), "x and y must be of same size");
 
+        // for n bits number, there will be n/4 ModMultStep operations
+        for step_idx in 0..n/4-1 {
+            ModMultStep(x[step_idx*4 .. (step_idx+1)*4-1], y, garb, modMultResult);
+        }
 
+        use ancilla = Qubit[1];
+        Adjoint IncByL(get_p(), ancilla + modMultResult);
+        Controlled IncByL(ancilla, (get_p(), modMultResult));
+    }
 
-        // there will a ModMultStep operation that is called multiple times
+    operation ModMultStep(x: Qubit[], y: Qubit[], garb: Qubit[], modMultResult: Qubit[]) : 
+    Unit is Adj + Ctl {
+        Fact(Length(garb) == 4, "garb qubit[] must be of size 4");
+        Fact(Length(x) == 4, "x qubit[] is the 4 controlled qubit for addition");
+
+        use ancilla = Qubit[4];
+
+        for i in 0..3 {
+            for addition_step in 0..2^i {
+                Controlled IncByLE([x[i]], (y, ancilla + modMultResult));
+            }
+        }
+        for i in 0..3 {
+            CNOT(modMultResult[i], garb[i]);
+        }
+
+        // lookup table
+        let precision = Length(x) + 4;
+        let lookupTable = get_lookUpTable_modMult(precision);
+
+        use lookUpAncilla = Qubit[precision];
+        within {
+            Select(lookupTable, garb, lookUpAncilla);
+        } apply {
+            IncByLE(lookUpAncilla, ancilla + modMultResult);
+        }
+    }
+
+    function get_lookUpTable_modMult(precision : Int) : Bool[][] {
+        mutable table: Bool[][] = [[], size = 17];
+        for c in 0..16 {
+            mutable result : BigInt = (-1L / get_p()) % 16L * get_p() ;
+
+            let binResult = BigIntAsBoolArray(result, precision);
+
+            set table w/= c <- binResult;
+        }
+        return table;
     }
 
     operation ModInv(x : Qubit[], garb_1 : Qubit[], garb_2 : Qubit[]) : Unit
