@@ -1,4 +1,4 @@
-namespace ECP_resEst {
+namespace ECP {
     open Microsoft.Quantum.Convert;
     open Microsoft.Quantum.Math;
     open Microsoft.Quantum.ResourceEstimation;
@@ -6,7 +6,6 @@ namespace ECP_resEst {
     open Microsoft.Quantum.Unstable.Arithmetic;
     open Microsoft.Quantum.Unstable.TableLookup;
     open Microsoft.Quantum.Diagnostics;
-    open Microsoft.Quantum.Unstable.Arithmetic;
 
     function get_p() : BigInt {
         let p : BigInt = 256L;
@@ -25,7 +24,7 @@ namespace ECP_resEst {
 
 
         // convert input points to binary
-        let bin_p_x = IntAsBoolArray(p_x, num_bits); // is this little-Endian?
+        let bin_p_x = IntAsBoolArray(p_x, num_bits); // little-Endian
         let bin_p_y = IntAsBoolArray(p_y, num_bits);
 
         // qubits in the main routine
@@ -144,8 +143,6 @@ namespace ECP_resEst {
 
         return (result_a, result_b);
     }
-
-    operation Select(data : Bool[][], address : Qubit[], target : Qubit[]) : Unit is Adj + Ctl {}
 
     operation ECPointAdd(a : Qubit[], b : Qubit[], x : Qubit[], y : Qubit[], lambda_r : Qubit[]) : Unit {
         let n = Length(x);
@@ -352,12 +349,12 @@ namespace ECP_resEst {
     //
     // References:
     //     - [arXiv:2306.08585](https://arxiv.org/pdf/2306.08585.pdf)
-    operation ModDbl(mod : BigInt, xs : Qubit[]) : Unit is Adj + Ctl {
+    operation ModDbl(xs : Qubit[]) : Unit is Adj + Ctl {
         use lsb = Qubit();
         use msb = Qubit();
 
-        Adjoint IncByLUsingIncByLE(RippleCarryCGIncByLE, mod, [lsb] + xs + [msb]);
-        Controlled IncByLUsingIncByLE([msb], (RippleCarryCGIncByLE, mod, [lsb] + xs));
+        Adjoint IncByLUsingIncByLE(RippleCarryCGIncByLE, get_p(), [lsb] + xs + [msb]);
+        Controlled IncByLUsingIncByLE([msb], (RippleCarryCGIncByLE, get_p(), [lsb] + xs));
 
         CNOT(lsb, msb);
         X(msb);
@@ -396,37 +393,45 @@ namespace ECP_resEst {
         X(f);
 
         let n = Length(x);
-        use u = Qubit[n]; // need to initialize to p. do after checking qubit ordering.
+        use u = Qubit[n];
         use r = Qubit[n];
-        use s = Qubit[n]; // need to initialize to 1. do after checking qubit ordering.
+        use s = Qubit[n];
 
+        // initialize register u to p.
+        let bin_p = BigIntAsBoolArray(get_p(), n);
         for i in 0..n-1 {
-            helper_mod_inv(b, a, f, u, x, r, s, garb_1[i]); // v is x
+            if (bin_p[i]) {
+                X(u[i]);
+            }
+
+            X(s[0]); // initialize register s to 1.
+
+            for i in 0..n-1 {
+                helper_mod_inv(b, a, f, u, x, r, s, garb_1[i]); // v is x
+            }
+
+            for j in 0..n-1 {
+                helper_mod_inv(b, a, f, u, x, r, s, garb_2[j]);
+            }
+
+            ModNeg(r);
+
+            IncByL(get_p(), r);
+
+            bunch_swap(x, r);
         }
-
-        for j in 0..n-1 {
-            helper_mod_inv(b, a, f, u, x, r, s, garb_2[j]);
-        }
-
-        // Neg: Is this Neg ModNeg?
-
-        IncByL(p, r);
-
-        bunch_swap(x, r);
     }
 
     operation helper_mod_inv(b : Qubit, a : Qubit, f : Qubit, u : Qubit[], v : Qubit[], r : Qubit[], s : Qubit[], Garbit : Qubit) : Unit is Adj + Ctl {
         Controlled nQubitToff([f], (v, Garbit, false));
         CNOT(Garbit, f);
 
-        X(u[0]); //u[0] or u[-1]? what convention? Double check qubit ordering.
-        CCNOT(u[0], f, a); //u[0] or u[-1]? Using top to down 0 to n-1 for now
-        X(u[0]); //u[0] or u[-1]? Questioning this as for ModAdd and ModDbl, most significant bit is added to the bottom
-
+        X(u[0]);
+        CCNOT(u[0], f, a);
+        X(u[0]);
         X(a);
         X(v[0]);
-        Controlled X(([a, f, v[0]]), Garbit); //check qubit ordering
-        X(a);
+        Controlled X(([a, f, v[0]]), Garbit);
         X(v[0]);
 
         CNOT(a, b);
@@ -435,9 +440,10 @@ namespace ECP_resEst {
         X(b);
 
         use helper_bit = Qubit();
-        ApplyIfLessLE(X, u, v, helper_bit);
-        Controlled X([helper_bit, b, f], a);
-        Controlled X([helper_bit, b, f], Garbit);
+        Controlled ApplyIfLessLE([b, f], (X, u, v, helper_bit));
+        CNOT(helper_bit, a);
+        CNOT(helper_bit, Garbit);
+        // ApplyIfLessLE(ApplyToEachCA(X, _), x, y, [a, mi]) ApplyIfLessLE((a, mi) => { X(a); X(mi); }, x, y, (a, mi))
 
         Controlled bunch_swap([a], (u, v));
         Controlled bunch_swap([a], (r, s));
@@ -449,9 +455,12 @@ namespace ECP_resEst {
         CNOT(a, b);
         CNOT(Garbit, b);
 
-        // Controlled dividing by 2. Remove least significant qubit and shift order? What if value is odd?
+        // Controlled dividing by 2.
+        Controlled CircularlyShifted([f], (-1, v));
+        // hoping to use circularlyshifted in Microsoft.Quantum.Arrays, but it can't be controlled.
+        // Either ask next time, or implement it myself when I feel like it.
 
-        ModDbl(p, r); // ugh not being able to define constant for the entire file is a pain
+        ModDbl(r);
         Controlled bunch_swap([a], (u, v));
         Controlled bunch_swap([a], (r, s));
         X(s[0]);
@@ -503,8 +512,6 @@ namespace ECP_resEst {
             nQubitToff(ancilla, target, false);
         }
     }
-}
+} 
 
-
-
-
+        
