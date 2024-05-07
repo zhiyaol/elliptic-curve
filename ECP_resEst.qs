@@ -226,8 +226,7 @@ namespace ECP_resEst {
     }
 
     operation step_five_helper(control: Qubit[], x: Qubit[], y: Qubit[], z_1: Qubit[], z_2: Qubit[], 
-                                z_3: Qubit[], z_4: Qubit[], lambda: Qubit[]) : Unit
-    is Adj + Ctl {
+                                z_3: Qubit[], z_4: Qubit[], lambda: Qubit[]) : Unit is Adj + Ctl {
     // Helper Function that fits in the uncompute box in step 5
         within {
             ModInv(x,z_1,z_2);
@@ -235,7 +234,6 @@ namespace ECP_resEst {
         } apply {
             for i in 1..Length(z_4)-1 {
                 nQubitToff(control+[z_4[i]], lambda[i], true);
-                // Unsure how I concatenate qubit lists and qubits into one list
             }
         }
     }
@@ -271,7 +269,7 @@ namespace ECP_resEst {
 
     // the following section is for the six modular arithmetic operations
     operation ModAdd(x: Qubit[], y: Qubit[]): Unit 
-    is Adj + Ctl { // Zhiyao added this line so the function can be controlled and adjointed
+    is Adj + Ctl {
         // x, y are the two numbers to be added
         // the result is stored in y
         // |y> -> |y + x mod p>
@@ -293,9 +291,6 @@ namespace ECP_resEst {
         // x, y are the two numbers to be subtracted
         // the result is stored in y
         // |y> -> |y - x mod p>
-
-        // Lingnan: not sure about this part, the uncompute may be not the adjoint structure.
-        // Will ask in the next meeting.
         within {
             for i in 0..Length(x)-1 {
                 X(x[i]);
@@ -320,12 +315,32 @@ namespace ECP_resEst {
         nQubitToff(x, ancilla[0], false);
     }
 
-    operation ModDbl(x: Qubit[]): Unit 
-    is Adj + Ctl {
-        // x is the number to be squared
-        // the result is stored in x
-        // |x> -> |2x mod p>
+    // Mathias's implementation
+    // Computes (xs += xs) mod p
+    //
+    // References:
+    //     - [arXiv:2306.08585](https://arxiv.org/pdf/2306.08585.pdf)
+    // |x> -> |2x mod p>
+    operation ModDbl(x : Qubit[]): Unit is Adj + Ctl {
+        use lsb = Qubit();
+        use msb = Qubit();
+
+        Adjoint IncByLUsingIncByLE(RippleCarryCGIncByLE, get_p(), [lsb] + x + [msb]);
+        Controlled IncByLUsingIncByLE([msb], (RippleCarryCGIncByLE, get_p(), [lsb] + x));
+
+        CNOT(lsb, msb);
+        X(msb);
+
+        CyclicRotateRegister([lsb] + x); 
+        // Dropping original most significant qubit in xs. How do we know it's not 1?
     }
+    internal operation CyclicRotateRegister(qs : Qubit[]) : Unit is Adj + Ctl {
+        // Keep lsb as lsb so doubling actually happens
+        SwapReverseRegister(qs); // Uses SWAP gates to Reversed the order of the qubits in a register.
+        SwapReverseRegister(Rest(qs)); 
+        //Rest: Creates an array that is equal to an input array except that the first array element is dropped.
+    }
+
 
     operation ModMult(x: Qubit[], y: Qubit[], garb: Qubit[], modMultResult: Qubit[]): Unit 
     is Adj + Ctl{
@@ -337,7 +352,7 @@ namespace ECP_resEst {
 
         // for n bits number, there will be n/4 ModMultStep operations
         for step_idx in 0..n/4-1 {
-            ModMultStep(x[step_idx*4 .. (step_idx+1)*4], y, garb, modMultResult);
+            ModMultStep(x[step_idx*4 .. (step_idx+1)*4-1], y, garb, modMultResult);
         }
 
         use ancilla = Qubit[1];
@@ -345,8 +360,8 @@ namespace ECP_resEst {
         Controlled IncByL(ancilla, (get_p(), modMultResult));
     }
 
-    operation ModMultStep(x: Qubit[], y: Qubit[], garb: Qubit[], modMultResult: Qubit[]): 
-    Unit is Adj + Ctl{
+    operation ModMultStep(x: Qubit[], y: Qubit[], garb: Qubit[], modMultResult: Qubit[]) : 
+    Unit is Adj + Ctl {
         Fact(Length(garb) == 4, "garb qubit[] must be of size 4");
         Fact(Length(x) == 4, "x qubit[] is the 4 controlled qubit for addition");
 
@@ -357,27 +372,32 @@ namespace ECP_resEst {
                 Controlled IncByLE([x[i]], (y, ancilla + modMultResult));
             }
         }
-
-        // cnot modMultResult to garb (not sure about this part, pending Mathias' response)
-        // CNOT(modMultResult[0], garb[0]);
+        for i in 0..3 {
+            CNOT(modMultResult[i], garb[i]);
+        }
 
         // lookup table
         let precision = Length(x) + 4;
+        let lookupTable = get_lookUpTable_modMult(precision);
+
+        use lookUpAncilla = Qubit[precision];
+        within {
+            Select(lookupTable, garb, lookUpAncilla);
+        } apply {
+            IncByLE(lookUpAncilla, ancilla + modMultResult);
+        }
+    }
+
+    function get_lookUpTable_modMult(precision : Int) : Bool[][] {
         mutable table: Bool[][] = [[], size = 17];
         for c in 0..16 {
-            mutable result: BigInt = (-1L / get_p()) % 16L * get_p() ;
+            mutable result : BigInt = (-1L / get_p()) % 16L * get_p() ;
 
             let binResult = BigIntAsBoolArray(result, precision);
 
             set table w/= c <- binResult;
         }
-
-        use lookUpAncilla = Qubit[precision];
-        within {
-            Select(table, garb, lookUpAncilla);
-        } apply {
-            IncByLE(lookUpAncilla, ancilla + modMultResult);
-        }
+        return table;
     }
 
     operation ModInv(x: Qubit[], garb_1: Qubit[], garb_2: Qubit[]): Unit 
@@ -385,6 +405,96 @@ namespace ECP_resEst {
         // x is the number to be inverted
         // the result is stored in x
         // |x> -> |x^-1 mod p>
+        let n = Length(x);
+
+        // specify all the ancilla qubit: v, a, f, u, r, s
+        use ancilla_b = Qubit[1];
+        use ancilla_a = Qubit[1];
+        use ancilla_f = Qubit[1];
+        X(ancilla_f[0]);
+        
+        // initialize |u=p>
+        use ancilla_u = Qubit[n];
+        let bin_p = BigIntAsBoolArray(get_p(), n);
+        for i in 0..n-1 {
+            if bin_p[i] {
+                X(ancilla_u[i]);
+            }
+        }
+
+        use ancilla_r = Qubit[n];
+
+        // initialize |s=1>
+        use ancilla_s = Qubit[n];
+        X(ancilla_s[0]);
+
+        // the block is repeated 2n times
+        for modInv_subroutine_idx in 1..2*n {
+            use ancilla_m_i = Qubit[1];
+
+            Controlled nQubitToff(ancilla_f, (x, ancilla_m_i[0], false));
+            CNOT(ancilla_m_i[0], ancilla_f[0]);
+
+            // the controll qubit is always the lsb of u and x (for all repetitions)
+            within {
+                X(ancilla_u[0]);                
+            } apply {
+                CCNOT(ancilla_u[0], ancilla_f[0], ancilla_a[0]);
+            }
+
+            within {
+                X(ancilla_f[0]);
+            } apply {
+                nQubitToff(ancilla_a + ancilla_f + [x[0]], ancilla_m_i[0], false);
+            }
+
+            CNOT(ancilla_a[0], ancilla_b[0]);
+            CNOT(ancilla_m_i[0], ancilla_b[0]);
+
+            // compare: u < v
+            // controlled by ancilla_f and ancilla_b (white)
+            // controlled NOT by u < v
+            within {
+                X(ancilla_b[0]);
+            } apply {
+                Controlled ApplyIfLessLE(ancilla_b + ancilla_f, 
+                           (ApplyToEachCA(X, _), ancilla_u, x, [ancilla_a[0], ancilla_m_i[0]]));
+            }
+
+            // controlled n-qubit SWAP
+            Controlled nQubitSWAP(ancilla_a, (ancilla_u, x));
+            Controlled nQubitSWAP(ancilla_a, (ancilla_r, ancilla_s));
+
+            // controlled subtration and addition
+            within {
+                X(ancilla_b[0]);
+            } apply {
+                Controlled Adjoint IncByLE(ancilla_b + ancilla_f, (ancilla_u, x));
+                Controlled IncByLE(ancilla_b + ancilla_f, (ancilla_r, ancilla_s));
+            }
+
+            CNOT(ancilla_a[0], ancilla_b[0]);
+            CNOT(ancilla_m_i[0], ancilla_b[0]);
+
+            // controlled halve operation. Swap lsb with msb because we know lsb should be 0
+            Controlled nQubitHalve(ancilla_f, x);
+            ModDbl(ancilla_r);
+
+            // controlled n-qubit SWAP
+            Controlled nQubitSWAP(ancilla_a, (ancilla_u, x));
+            Controlled nQubitSWAP(ancilla_a, (ancilla_r, ancilla_s));
+
+            within {
+                X(ancilla_s[0]);
+            } apply {
+                CNOT(ancilla_s[0], ancilla_a[0]);
+            }
+        }
+
+        // modNeg, the paper made an mistake in Fig.7
+        ModNeg(ancilla_r);
+        IncByL(get_p(), ancilla_r);
+        nQubitSWAP(ancilla_r, x);
     }
 
     operation nQubitToff(ctl: Qubit[], target: Qubit, color: Bool): Unit is Adj + Ctl{
@@ -422,6 +532,33 @@ namespace ECP_resEst {
             }
         } apply {
             nQubitToff(ancilla, target, false);
+        }
+    }
+
+    // n-qubit swap gate
+    operation nQubitSWAP(a : Qubit[], b : Qubit[]) : Unit is Adj + Ctl {
+        Fact(Length(a) == Length(b), "a and b must be of same size");
+        for i in 0..Length(a)-1 {
+            within {
+                CNOT(a[i], b[i]);
+            } apply {
+                CNOT(b[i], a[i]);
+            }    
+        }
+    }
+
+    // n-qubit Fredkin gate
+    // single control qubit and apply SWAP gate between two n-qubit registers target1 and target2
+    operation nQubitFredkin(ctl : Qubit, target1 : Qubit[], target2 : Qubit[]) : Unit is Adj {
+        Controlled nQubitSWAP([ctl], (target1, target2));
+    }
+
+    // halve the n-qubit number
+    // swap the i-th qubit (represent 2^i) with the (i+1)-th qubit 2^(i+1)
+    // this Halve() will swap lsb with msb, use only when we know lsb == 0
+    operation nQubitHalve(x : Qubit[]) : Unit is Adj + Ctl {
+        for i in 0..Length(x)-1 {
+            SWAP(x[i], x[i+1]);
         }
     }
 }
