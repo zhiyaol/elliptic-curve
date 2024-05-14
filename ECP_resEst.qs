@@ -8,24 +8,42 @@ namespace ECP_resEst {
     open Microsoft.Quantum.Diagnostics;
     open Microsoft.Quantum.Unstable.Arithmetic;
 
+    // 'p' as in module(p) for the holw algorithm
     function get_p() : BigInt {
         let p : BigInt = 256L;
         return p;
     }
 
+    // input basis point 'P'
+    function get_basisPoint() : (BigInt, BigInt) {
+        let p_x : BigInt = 8L;
+        let p_y : BigInt = 1024L;
+        return (p_x, p_y);
+    }
+
+    // public key 'Q' point, Q = [k]P
+    function get_publicKeyPoint() : (BigInt, BigInt) {
+        let Q_x : BigInt = 512L;
+        let Q_y : BigInt = 16L;
+        return (Q_x, Q_y);
+    }
+
+    // c1 for the curve y^2 = x^3 + c1 * x + c2
+    function get_c1() : BigInt {
+        let c1 : BigInt = 3L;
+        return c1;
+    }
+
+
     @EntryPoint()
     operation main() : Unit {
-        let num_bits = 256;
-        let num_window = 16;
+        let num_bits : Int = 256;
+        let num_window : Int = 16;
 
-        // input points
-        let p_x : Int = 8;
-        let p_y : Int = 9;
-
-
-        // convert input points to binary
-        let bin_p_x = IntAsBoolArray(p_x, num_bits);
-        let bin_p_y = IntAsBoolArray(p_y, num_bits);
+        let (p_x, p_y) = get_basisPoint();
+        // convert basis points to binary
+        let bin_p_x = BigIntAsBoolArray(p_x, num_bits);
+        let bin_p_y = BigIntAsBoolArray(p_y, num_bits);
 
         // qubits in the main routine
         use contrl_qubits = Qubit[num_bits];
@@ -39,62 +57,166 @@ namespace ECP_resEst {
         // the most significant bit is at the last qubit
         for i in 0..num_bits-1 {
             H(contrl_qubits[i]);
+
             if (bin_p_x[i]) {
                 X(input_x[i]);
             }
+
             if (bin_p_y[i]) {
                 X(input_y[i]);
             }
         }
+        // We can also use applytoEachA() and ApplyXorInPlace() to achieve the same effect.
+
+        
+        mutable table_windowECPAdd : Bool[][] = [[], size = 2^num_window];
+        // initialize whole table with basis point P and lambda_r = 0
+        for c in 0..2^num_window-1 {
+            set table_windowECPAdd w/= c <- bin_p_x + bin_p_y + BigIntAsBoolArray(0L, num_bits);
+        }
 
         // i-th window operation
         for i in 0..num_window-1 {
+            // update the lookuptable with the current window
+            set table_windowECPAdd = update_lookupTable_windowECPAdd(table_windowECPAdd);
+
             let start = i * (num_bits / num_window);
             let end = (i + 1) * (num_bits / num_window) - 1;
             let control_interval = contrl_qubits[start .. end];
-            WindowStep(control_interval, input_x, input_y);
+            WindowStep(control_interval, input_x, input_y, table_windowECPAdd);
         }
 
         // inverse QFT on control qubits
         Adjoint ApplyQFT(contrl_qubits);
 
         // measure control qubits, so now we have 'c'
-        for i in 0..num_bits-1 {
-            MResetZ(contrl_qubits[i]);
-        }
+        MeasureEachZ(contrl_qubits);
+
 
         // second phase estimation to get 'ck'
-        // just repeat the above steps
+        // just repetition of above step with lookup now working on public key 'Q'
+        let (Q_x, Q_y) = get_publicKeyPoint();
+        // convert basis points to binary
+        let bin_Q_x = BigIntAsBoolArray(Q_x, num_bits);
+        let bin_Q_y = BigIntAsBoolArray(Q_y, num_bits);
+        for c in 0..2^num_window-1 {
+            set table_windowECPAdd w/= c <- bin_Q_x + bin_Q_y + BigIntAsBoolArray(0L, num_bits);
+        }
+
+        for i in 0..num_window-1 {
+            // update the lookuptable with the current window
+            set table_windowECPAdd = update_lookupTable_windowECPAdd(table_windowECPAdd);
+
+            let start = i * (num_bits / num_window);
+            let end = (i + 1) * (num_bits / num_window) - 1;
+            let control_interval = contrl_qubits[start .. end];
+            WindowStep(control_interval, input_x, input_y, table_windowECPAdd);
+        }
+
+        // inverse QFT on control qubits
+        Adjoint ApplyQFT(contrl_qubits);
+
+        // measure control qubits, so now we have 'ck'
+        MeasureEachZ(contrl_qubits);
     }
 
-    operation WindowStep(control: Qubit[], x: Qubit[], y: Qubit[]) : Unit {
-        let n= Length(x);
+    operation WindowStep(control : Qubit[], x : Qubit[], y : Qubit[], lookuptable : Bool[][]) : Unit {
+        let n = Length(x);
         Fact(Length(x) == Length(y), "x and y must be of same size");
 
         use a = Qubit[n];
         use b = Qubit[n];
         use lambda_r = Qubit[n];
 
-        // TODO: don't trust the following part here.
-        let data: Bool[][] = []; // TODO: compute
-
         // for c in 0,...,2^windowSize - 1
         // compute (a, b) = [c]R and lambda_r = (3a^2 + c_1)/(2b)
-        // (R is the basis point)
+        // (R is the base point)
         // then set data w/= c <- (binResult + binResult2) // which means data[c] = [a, b, lambda_r]
 
         // then do the look up with address = |+>^16
         // since the address is in superposition, the target qubit will also be in superposition
         // target qubit = a + b + lambda_r
         // Select(data, address, target)  // which means target qubit = data[address]
-
         within {
-            Select(data, control, a + b + lambda_r);
+            Select(lookuptable, control, a + b + lambda_r);
         } apply {
             ECPointAdd(a, b, x, y, lambda_r);
         }
+    }
 
-        // for each window, we need to change the basis point R.
+    function update_lookupTable_windowECPAdd(table : Bool[][]) : Bool[][] {
+        let num_bits : Int = 256;
+        mutable updated_table : Bool[][] = table;
+
+        // get the c = 1 and 2^16-1 entry from last window {i-1}
+        // do one arithmatic ECP addition to ge this window's base point 2^{16*i}R
+        let table_head = table[1];
+        mutable R_x_head : BigInt = BoolArrayAsBigInt(table_head[0..num_bits-1]);
+        mutable R_y_head : BigInt = BoolArrayAsBigInt(table_head[num_bits..2*num_bits-1]);
+        mutable lambda_r_head : BigInt = BoolArrayAsBigInt(table_head[2*num_bits..3*num_bits-1]);
+
+        let table_tail = table[Length(table)-1];
+        mutable R_x_tail : BigInt = BoolArrayAsBigInt(table_tail[0..num_bits-1]);
+        mutable R_y_tail : BigInt = BoolArrayAsBigInt(table_tail[num_bits..2*num_bits-1]);
+        mutable lambda_r_tail : BigInt = BoolArrayAsBigInt(table_tail[2*num_bits..3*num_bits-1]);
+
+        // calculate the next base point R and lambda_r
+        // first do head + tail for P
+        let (window_R_x, window_R_y, window_lambda_r) = arithmatic_ECPointAdd((R_x_head, R_y_head), (R_x_tail, R_y_tail), lambda_r_head);
+
+        mutable (x_r, y_r, lambda_r) = (window_R_x, window_R_y, window_lambda_r);
+        for c in 0..2^num_bits-1 {
+            if c == 0 {
+                set updated_table w/= c <- BigIntAsBoolArray(0L, num_bits) 
+                                        + BigIntAsBoolArray(0L, num_bits) 
+                                        + BigIntAsBoolArray(0L, num_bits);
+            }
+            elif c == 1 {
+                set updated_table w/= c <- BigIntAsBoolArray(window_R_x, num_bits) 
+                                        + BigIntAsBoolArray(window_R_y, num_bits) 
+                                        + BigIntAsBoolArray(window_lambda_r, num_bits);
+            }
+            else {
+                set (x_r, y_r, lambda_r) = arithmatic_ECPointAdd((x_r, y_r), (window_R_x, window_R_y), lambda_r);
+                set updated_table w/= c <- BigIntAsBoolArray(x_r, num_bits) 
+                                        + BigIntAsBoolArray(y_r, num_bits) 
+                                        + BigIntAsBoolArray(lambda_r, num_bits);
+            }
+        }
+        return updated_table;
+    }
+
+    // calculate the Elliptic curve point addition
+    // Given two points P_1 = (a, b) and P_2 = (x, y), the addition is P_3 = P_1 + P_2 = (x_r, y_r)
+    function arithmatic_ECPointAdd(
+        P_1 : (BigInt, BigInt), 
+        P_2 : (BigInt, BigInt), 
+        lambda : BigInt
+        ) : (BigInt, BigInt, BigInt) {
+        let (a, b) = P_1;
+        let (x, y) = P_2;
+
+        if (P_1 == (0L, 0L)) {
+            return (x, y, 0L);
+        }
+        elif (P_2 == (0L, 0L)) {
+            return (a, b, 0L);
+        }
+        elif ((a, b) == (x, -y)) {
+            return (0L, 0L, 0L);
+        }
+        else {
+            let x_r = (lambda^2 - x - a) % get_p();
+            let y_r = (lambda * (a - x_r) - b) % get_p();
+            mutable lambda_r : BigInt = 0L;
+            if  (P_1 == P_2) {
+                set lambda_r = ((3L * a^2 + get_c1()) / (2L * b)) % get_p();
+            }
+            else {
+                set lambda_r = ((y - b) / (x - a)) % get_p();
+            }
+            return (x_r, y_r, lambda_r);
+        }
     }
 
     operation ECPointAdd(a: Qubit[], b: Qubit[], x: Qubit[], y: Qubit[], lambda_r: Qubit[]) : Unit {
@@ -229,8 +351,8 @@ namespace ECP_resEst {
                                 z_3: Qubit[], z_4: Qubit[], lambda: Qubit[]) : Unit is Adj + Ctl {
     // Helper Function that fits in the uncompute box in step 5
         within {
-            ModInv(x,z_1,z_2);
-            ModMult(x,y,z_3,z_4);
+            ModInv(x, z_1, z_2);
+            ModMult(x, y, z_3, z_4);
         } apply {
             for i in 1..Length(z_4)-1 {
                 nQubitToff(control+[z_4[i]], lambda[i], true);
@@ -268,8 +390,7 @@ namespace ECP_resEst {
 
 
     // the following section is for the six modular arithmetic operations
-    operation ModAdd(x: Qubit[], y: Qubit[]): Unit 
-    is Adj + Ctl {
+    operation ModAdd(x: Qubit[], y: Qubit[]): Unit is Adj + Ctl {
         // x, y are the two numbers to be added
         // the result is stored in y
         // |y> -> |y + x mod p>
@@ -286,8 +407,7 @@ namespace ECP_resEst {
         X(ancilla[0]);
     }
 
-    operation ModSub(x: Qubit[], y: Qubit[]): Unit 
-    is Adj + Ctl {
+    operation ModSub(x: Qubit[], y: Qubit[]): Unit is Adj + Ctl {
         // x, y are the two numbers to be subtracted
         // the result is stored in y
         // |y> -> |y - x mod p>
@@ -301,8 +421,7 @@ namespace ECP_resEst {
         }
     }
 
-    operation ModNeg(x: Qubit[]): Unit 
-    is Adj + Ctl {
+    operation ModNeg(x: Qubit[]): Unit is Adj + Ctl {
         // x is the number to be negated
         // the result is stored in x
         // |x> -> |-x mod p>
@@ -342,8 +461,7 @@ namespace ECP_resEst {
     }
 
 
-    operation ModMult(x: Qubit[], y: Qubit[], garb: Qubit[], modMultResult: Qubit[]): Unit 
-    is Adj + Ctl{
+    operation ModMult(x: Qubit[], y: Qubit[], garb: Qubit[], modMultResult: Qubit[]) : Unit is Adj + Ctl {
         // x, y are the two numbers to be multiplied
         // the result is stored in modMultResult
         // modMultResult = |0> -> |xy mod p>
@@ -360,8 +478,7 @@ namespace ECP_resEst {
         Controlled IncByL(ancilla, (get_p(), modMultResult));
     }
 
-    operation ModMultStep(x: Qubit[], y: Qubit[], garb: Qubit[], modMultResult: Qubit[]) : 
-    Unit is Adj + Ctl {
+    operation ModMultStep(x: Qubit[], y: Qubit[], garb: Qubit[], modMultResult: Qubit[]) : Unit is Adj + Ctl {
         Fact(Length(garb) == 4, "garb qubit[] must be of size 4");
         Fact(Length(x) == 4, "x qubit[] is the 4 controlled qubit for addition");
 
@@ -400,8 +517,7 @@ namespace ECP_resEst {
         return table;
     }
 
-    operation ModInv(x: Qubit[], garb_1: Qubit[], garb_2: Qubit[]): Unit 
-    is Adj + Ctl {
+    operation ModInv(x: Qubit[], garb_1: Qubit[], garb_2: Qubit[]): Unit is Adj + Ctl {
         // x is the number to be inverted
         // the result is stored in x
         // |x> -> |x^-1 mod p>
@@ -517,7 +633,7 @@ namespace ECP_resEst {
         }
     }
 
-    operation nQubitEqual(x: Qubit[], y: Qubit[], target: Qubit): Unit {
+    operation nQubitEqual(x: Qubit[], y: Qubit[], target: Qubit) : Unit {
         // check if two n-qubit numbers are equal
         // Then apply a CNOT gate to target qubit
         let n = Length(x);
@@ -557,7 +673,7 @@ namespace ECP_resEst {
     // swap the i-th qubit (represent 2^i) with the (i+1)-th qubit 2^(i+1)
     // this Halve() will swap lsb with msb, use only when we know lsb == 0
     operation nQubitHalve(x : Qubit[]) : Unit is Adj + Ctl {
-        for i in 0..Length(x)-1 {
+        for i in 0..Length(x)-2 {
             SWAP(x[i], x[i+1]);
         }
     }
